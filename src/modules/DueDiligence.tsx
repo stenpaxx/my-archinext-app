@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Building2, ChevronDown, Upload, BadgeCheck, Landmark, AlertTriangle, Info,
+  Building2, ChevronDown, Upload, BadgeCheck, Landmark, AlertTriangle, Info, Compass,
 } from 'lucide-react';
 import { useStore, useAttiva } from '@/lib/store';
 import { MUNICIPI, STEP_LABELS, TESSUTI_PRG, type Commessa, type TipologiaCommessa } from '@/lib/types';
@@ -11,6 +11,73 @@ const TIPOLOGIE: TipologiaCommessa[] = [
   'Ristrutturazione SCIA',
   'Cambio d’uso SCIA',
 ];
+
+interface NtaTessutoMeta {
+  macroAmbito: string;
+  attuazione: string;
+  titoloIndicativo: string;
+  prescrizioni: string;
+  ammessiFallback: string[];
+  noteFallback: string;
+}
+
+const NTA_PROFILI: Record<string, NtaTessutoMeta> = {
+  T1: {
+    macroAmbito: 'Città Storica — Nucleo storico',
+    attuazione: 'Intervento diretto con prescrizioni tipologiche/morfologiche stringenti',
+    titoloIndicativo: 'CILA / SCIA (verificare tutela diretta/indiretta)',
+    prescrizioni: 'Massima tutela dell’impianto distributivo, delle cortine edilizie e degli elementi architettonici originari; attenzione a frazionamenti e cambi d’uso.',
+    ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Restauro e Risanamento Conservativo'],
+    noteFallback: 'Verifica puntuale delle NTA Città Storica (Titolo III) e coerenza con l’impianto originario.',
+  },
+  T2: {
+    macroAmbito: 'Città Storica — Tessuto storico',
+    attuazione: 'Intervento diretto con controllo delle trasformazioni interne ed esterne',
+    titoloIndicativo: 'CILA / SCIA + eventuale parere/autorizzazione',
+    prescrizioni: 'Tutela dei caratteri morfologici e tipologici dell’edilizia storica; cautela su aperture prospettiche, soppalchi e frazionamenti.',
+    ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Restauro e Risanamento Conservativo', 'Ristrutturazione Edilizia (nei limiti NTA)'],
+    noteFallback: 'Controllo coerenza catastale/storica e rispetto delle prescrizioni del tessuto T2.',
+  },
+  T3: {
+    macroAmbito: 'Città Storica — Tessuto di espansione novecentesca',
+    attuazione: 'Intervento diretto ordinario / convenzionato ove previsto',
+    titoloIndicativo: 'CILA / SCIA',
+    prescrizioni: 'Attenzione ai caratteri architettonici dei quartieri novecenteschi, ai cortili/distacchi e agli eventuali riferimenti alla Carta per la Qualità.',
+    ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Restauro e Risanamento Conservativo', 'Ristrutturazione Edilizia'],
+    noteFallback: 'Verifica rapporti plano-volumetrici, superfici permeabili e prescrizioni di tessuto.',
+  },
+  T7: {
+    macroAmbito: 'Città Consolidata — Tessuto urbano consolidato',
+    attuazione: 'Intervento diretto',
+    titoloIndicativo: 'CILA / SCIA / Cambio d’uso',
+    prescrizioni: 'Rispetto dei parametri urbanistici/edilizi di zona, delle destinazioni d’uso ammesse e della dotazione di standard/parcheggi ove richiesta.',
+    ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Ristrutturazione Edilizia', 'Cambio d’uso (negli ambiti previsti)'],
+    noteFallback: 'Verifica ammissibilità funzionale e dotazioni urbanistiche in caso di cambio d’uso o frazionamento.',
+  },
+  T13: {
+    macroAmbito: 'Città da Ristrutturare',
+    attuazione: 'Intervento diretto o subordinato a strumenti attuativi/convenzioni',
+    titoloIndicativo: 'SCIA / Permesso di Costruire / Piano Attuativo',
+    prescrizioni: 'Verificare se l’intervento ricade in comparto/ambito con disciplina attuativa specifica, oneri/contributi e adeguamento delle opere di urbanizzazione.',
+    ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Ristrutturazione Edilizia', 'Ristrutturazione Urbanistica (ove previsto)'],
+    noteFallback: 'Controllo preliminare su eventuali ambiti di pianificazione esecutiva e contributi/standard.',
+  },
+};
+
+const DEFAULT_NTA_META: NtaTessutoMeta = {
+  macroAmbito: 'Sistemi e Regole del PRG di Roma Capitale',
+  attuazione: 'Intervento diretto / verifica puntuale NTA',
+  titoloIndicativo: 'CILA / SCIA (secondo categoria di intervento)',
+  prescrizioni: 'Verificare l’articolo specifico delle NTA del PRG associato alla sigla di tessuto/ambito e l’eventuale sovrapposizione con Carta per la Qualità e vincoli.',
+  ammessiFallback: ['Manutenzione Ordinaria', 'Manutenzione Straordinaria', 'Ristrutturazione Edilizia'],
+  noteFallback: 'Aggiornamento dinamico collegato alla sigla del tessuto selezionato.',
+};
+
+function estraiSiglaTessuto(valore?: string): string {
+  if (!valore) return '';
+  const match = valore.trim().match(/^([A-Za-z]+\d+)/);
+  return match ? match[1].toUpperCase() : valore.trim();
+}
 
 const inputCls =
   'w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-[13px] text-slate-800 focus:outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600 transition-colors';
@@ -37,7 +104,13 @@ export function DueDiligence() {
 
   const pct = Math.round((steps.filter(Boolean).length / 7) * 100);
   const upd = (patch: Partial<Commessa>) => aggiornaCommessa(commessa.id, patch);
-  const tessuto = TESSUTI_PRG.find((t) => t.sigla === commessa.tessutoPRG);
+
+  const siglaCorrente = estraiSiglaTessuto(commessa.tessutoPRG);
+  const tessuto = TESSUTI_PRG.find((t) => t.sigla.toUpperCase() === siglaCorrente);
+  const ntaMeta = NTA_PROFILI[siglaCorrente] ?? DEFAULT_NTA_META;
+  const interventiAmmessi = tessuto?.ammessi?.length ? tessuto.ammessi : ntaMeta.ammessiFallback;
+  const notaTessuto = tessuto?.note || ntaMeta.noteFallback;
+  const etichettaTessuto = tessuto ? `${tessuto.sigla} — ${tessuto.nome}` : commessa.tessutoPRG || 'Non impostato';
 
   const importaJSON = async (file: File) => {
     try {
@@ -49,7 +122,7 @@ export function DueDiligence() {
   };
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-6 lg:p-8 max-w-none">
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">1. Due Diligence &amp; NTA Roma</h1>
         <p className="text-sm text-slate-500 mt-1">Anagrafica, catastale e fattibilità urbanistica secondo le NTA del PRG di Roma Capitale.</p>
@@ -65,6 +138,7 @@ export function DueDiligence() {
               <span className="inline-flex items-center gap-1"><Building2 size={12} /> {commessa.indirizzo || 'Indirizzo non impostato'}</span>
               <span className="inline-flex items-center gap-1"><Landmark size={12} /> {commessa.municipio || '—'}</span>
               <span className="inline-flex items-center gap-1">{commessa.tipologia}</span>
+              <span className="inline-flex items-center gap-1 text-sky-300/90"><Compass size={12} /> {etichettaTessuto}</span>
             </div>
           </div>
           <div className="flex flex-col gap-2 items-end">
@@ -132,21 +206,56 @@ export function DueDiligence() {
 
       {/* Tessuto PRG */}
       <section className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
-        <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide mb-4">Tessuto urbanistico PRG Roma Capitale</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">Tessuto urbanistico PRG Roma Capitale</h3>
+          <span className="text-xs font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-full px-3 py-0.5">
+            {ntaMeta.macroAmbito}
+          </span>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Tessuto / Zona">
-            <select className={inputCls} value={commessa.tessutoPRG} onChange={(e) => upd({ tessutoPRG: e.target.value })}>
-              {TESSUTI_PRG.map((t) => <option key={t.sigla}>{t.sigla} — {t.nome}</option>)}
-            </select>
-          </Field>
-          <div className="rounded bg-slate-50 border border-slate-200 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Interventi ammessi</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(tessuto?.ammessi ?? []).map((a) => (
-                <span key={a} className="text-[11px] bg-sky-50 text-sky-800 border border-sky-200 rounded-full px-2.5 py-0.5">{a}</span>
-              ))}
+          <div className="space-y-3">
+            <Field label="Tessuto / Zona">
+              <select
+                className={inputCls}
+                value={siglaCorrente}
+                onChange={(e) => upd({ tessutoPRG: e.target.value })}
+              >
+                {TESSUTI_PRG.map((t) => (
+                  <option key={t.sigla} value={t.sigla}>
+                    {t.sigla} — {t.nome}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="rounded bg-slate-50 border border-slate-200 p-3 text-xs space-y-1.5">
+              <div>
+                <span className="font-semibold text-slate-700">Modalità attuativa: </span>
+                <span className="text-slate-600">{ntaMeta.attuazione}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-700">Titolo indicativo: </span>
+                <span className="text-slate-600">{ntaMeta.titoloIndicativo}</span>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">{tessuto?.note}</p>
+          </div>
+
+          <div className="rounded bg-slate-50 border border-slate-200 p-3.5 flex flex-col justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Interventi ammessi</p>
+              <div className="flex flex-wrap gap-1.5">
+                {interventiAmmessi.map((a) => (
+                  <span key={a} className="text-[11px] bg-sky-50 text-sky-800 border border-sky-200 rounded-full px-2.5 py-0.5">
+                    {a}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-600 mt-2.5 leading-relaxed">{notaTessuto}</p>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-200/80 leading-relaxed">
+              <strong className="text-slate-700">Prescrizioni NTA:</strong> {ntaMeta.prescrizioni}
+            </p>
           </div>
         </div>
 

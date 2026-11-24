@@ -30,10 +30,10 @@ interface State {
   toggleStep: (commessaId: string, index: number) => void;
 }
 
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const uid = () => crypto.randomUUID();
 
 const demoCommessa: Commessa = {
-  id: 'demo-boschetto',
+  id: '00000000-0000-4000-8000-000000000014',
   codice: '2026-014',
   titolo: 'Ristrutturazione Appartamento Via del Boschetto - Rione Monti, Roma',
   indirizzo: 'Via del Boschetto 42, 00184 Roma RM',
