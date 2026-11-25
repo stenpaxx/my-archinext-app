@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Cloud, CheckCircle2, Loader2, AlertCircle, LogIn, LogOut, UserCheck, ShieldCheck, Bot } from 'lucide-react';
+import { Cloud, CheckCircle2, Loader2, AlertCircle, LogIn, LogOut, UserCheck, ShieldCheck, Bot, Menu } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
@@ -18,6 +18,7 @@ import { caricaDaSupabase, sincronizzaCommessaSuSupabase } from '@/lib/supabaseS
 
 function App() {
   const [section, setSection] = useState<SectionId>('due-diligence');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
@@ -134,31 +135,41 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 flex">
+    <div className="min-h-screen bg-slate-100/90 flex overflow-x-clip">
       <Sidebar
         section={section}
         onChange={setSection}
         onOpenCatalogo={() => setCatalogoOpen(true)}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-6 py-2.5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>Cloud RLS:</span>
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Apri menu"
+              className="lg:hidden inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shrink-0"
+            >
+              <Menu size={16} />
+            </button>
+            <span className="hidden sm:inline">Cloud RLS:</span>
             {user ? (
-              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
-                <UserCheck className="w-3.5 h-3.5" />
-                {user.email}
+              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700 truncate">
+                <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{user.email}</span>
               </span>
             ) : (
-              <span className="font-medium text-amber-700">Modalità locale (accedi per sincronizzare)</span>
+              <span className="font-medium text-amber-700 truncate">Modalità locale</span>
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {syncMsg && (
               <span
-                className={`text-xs font-medium ${
+                className={`text-[11px] sm:text-xs font-medium ${
                   syncStatus === 'error'
                     ? 'text-red-600'
                     : syncStatus === 'pending'
@@ -173,13 +184,13 @@ function App() {
             <button
               onClick={handleSyncCloud}
               disabled={syncStatus === 'saving' || !commessa}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
             >
               {syncStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {syncStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
               {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
               {(syncStatus === 'idle' || syncStatus === 'pending') && <Cloud className="w-3.5 h-3.5" />}
-              {user ? (syncStatus === 'saving' ? 'Salvataggio...' : 'Salva ora') : 'Accedi per salvare'}
+              <span>{user ? (syncStatus === 'saving' ? 'Salvataggio...' : 'Salva ora') : 'Accedi'}</span>
             </button>
 
             {user ? (
@@ -187,16 +198,16 @@ function App() {
                 type="button"
                 onClick={handleLogout}
                 title="Esci dall'account"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span>Esci</span>
+                <span className="hidden sm:inline">Esci</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setAuthOpen(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Login</span>
@@ -205,8 +216,8 @@ function App() {
           </div>
         </header>
 
-        <div className="flex-1 w-full px-6 py-5">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="flex-1 w-full px-3 sm:px-6 py-4 sm:py-5">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-6 items-start">
             <div className="xl:col-span-8 min-w-0 [&_.max-w-4xl]:max-w-none [&_.max-w-5xl]:max-w-none [&_.max-w-6xl]:max-w-none [&_.max-w-7xl]:max-w-none [&_table]:w-full">
               {section === 'due-diligence' && <DueDiligence />}
               {section === 'rai' && <AuditRAI />}
@@ -222,14 +233,14 @@ function App() {
           </div>
         </div>
 
-        <footer className="border-t border-slate-200 bg-white/80 px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
+        <footer className="border-t border-slate-200 bg-white/80 px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
           <div className="flex items-center gap-2">
-            <Bot className="w-3.5 h-3.5 text-slate-400" />
+            <Bot className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span>
               Supporto decisionale assistito da AI (Reg. UE 2024/1689): gli elaborati richiedono verifica e asseverazione del tecnico abilitato.
             </span>
           </div>
-          <div className="flex items-center gap-4 font-medium text-slate-600">
+          <div className="flex flex-wrap items-center gap-4 font-medium text-slate-600">
             <button
               type="button"
               onClick={() => openLegal('privacy')}

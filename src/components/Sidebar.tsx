@@ -21,6 +21,8 @@ interface Props {
   section: SectionId;
   onChange: (s: SectionId) => void;
   onOpenCatalogo: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 function parseSynapsPayload(raw: string): {
@@ -112,7 +114,13 @@ function parseSynapsPayload(raw: string): {
   };
 }
 
-export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
+export function Sidebar({
+  section,
+  onChange,
+  onOpenCatalogo,
+  mobileOpen = false,
+  onCloseMobile,
+}: Props) {
   const commesse = useStore((s) => s.commesse);
   const attivaId = useStore((s) => s.attivaId);
   const setAttiva = useStore((s) => s.setAttiva);
@@ -127,6 +135,11 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
 
   const attiva = commesse.find((c) => c.id === attivaId);
   const pct = Math.round((steps.filter(Boolean).length / 7) * 100);
+
+  const handleSelectSection = (id: SectionId) => {
+    onChange(id);
+    onCloseMobile?.();
+  };
 
   const handleNew = () => {
     const n = commesse.length + 1;
@@ -146,6 +159,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
       vincoloSoprintendenza: false,
     });
     setOpen(false);
+    onCloseMobile?.();
   };
 
   const handleSynapsFile = async (file: File) => {
@@ -211,17 +225,36 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
 
   return (
     <>
-      <aside className="w-72 shrink-0 h-screen sticky top-0 bg-slate-900 text-slate-300 flex flex-col">
-        <div className="px-5 py-5 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-xs lg:hidden"
+          onClick={() => onCloseMobile?.()}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 shrink-0 h-dvh lg:h-screen lg:sticky lg:top-0 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-200 ease-out ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <div className="px-5 py-4 lg:py-5 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded bg-sky-600 flex items-center justify-center shrink-0">
               <FolderKanban size={18} className="text-white" />
             </div>
-            <div className="leading-tight">
-              <p className="text-white text-sm font-semibold">My Archinext</p>
-              <p className="text-[11px] text-slate-500">Assistente Tecnico Generativo</p>
+            <div className="leading-tight min-w-0">
+              <p className="text-white text-sm font-semibold truncate">My Archinext</p>
+              <p className="text-[11px] text-slate-500 truncate">Assistente Tecnico Generativo</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => onCloseMobile?.()}
+            aria-label="Chiudi menu"
+            className="lg:hidden text-slate-400 hover:text-white p-1.5 rounded"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <div className="px-4 py-4 border-b border-slate-800 relative">
@@ -257,7 +290,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => { setAttiva(c.id); setOpen(false); }}
+                    onClick={() => { setAttiva(c.id); setOpen(false); onCloseMobile?.(); }}
                     className="w-full text-left px-3 py-2 hover:bg-slate-700/70 flex items-center justify-between gap-2 group"
                   >
                     <span className="min-w-0 flex-1">
@@ -303,7 +336,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
 
           <button
             type="button"
-            onClick={onOpenCatalogo}
+            onClick={() => { onOpenCatalogo(); onCloseMobile?.(); }}
             className="mt-2 w-full py-1.5 px-3 rounded border border-slate-700 hover:border-emerald-500/60 bg-slate-800/40 hover:bg-slate-800 text-xs text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
           >
             <BookOpen size={13} className="text-emerald-400" />
@@ -326,7 +359,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
             <button
               key={id}
               type="button"
-              onClick={() => onChange(id)}
+              onClick={() => handleSelectSection(id)}
               className={`w-full text-left pl-5 pr-4 py-3 flex items-center gap-3 text-[13px] leading-snug transition-colors border-l-2 ${
                 section === id
                   ? 'bg-slate-800 text-white border-sky-500'
@@ -347,9 +380,9 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
       </aside>
 
       {synapsOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-slate-900 rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden">
-            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white text-slate-900 rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90dvh] flex flex-col">
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <FileUp size={16} className="text-sky-400" />
                 <h2 className="text-sm font-semibold">Importa Output Synaps.app (Esperimenti)</h2>
@@ -363,7 +396,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                 <span>
                   Commessa di destinazione: <strong className="text-slate-900">{attiva?.codice} — {attiva?.titolo}</strong>
@@ -383,7 +416,7 @@ export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
               </div>
 
               <textarea
-                rows={9}
+                rows={8}
                 value={synapsInput}
                 onChange={(e) => setSynapsInput(e.target.value)}
                 placeholder={'Incolla qui l’output di Synaps.app (JSON con "vani"/"voci" oppure CSV: Nome;Destinazione;Superficie;Finestra;Altezza)...'}
