@@ -117,6 +117,9 @@ const demoState = {
   catalogoPrezzari: [] as VocePrezzario[],
 };
 
+const EMPTY_VANI: Vano[] = [];
+const EMPTY_VOCI: VoceComputo[] = [];
+
 export const useStore = create<State>()(
   persist(
     (set) => ({
@@ -178,7 +181,7 @@ export const useStore = create<State>()(
           vani: {
             ...s.vani,
             [commessaId]: [
-              ...(s.vani[commessaId] ?? []),
+              ...(s.vani[commessaId] ?? EMPTY_VANI),
               { id: uid(), nome: '', destinazione: 'Camera singola', superficie: 0, superfFinestrata: 0, altezzaMedia: 2.7, vmc: false },
             ],
           },
@@ -188,31 +191,31 @@ export const useStore = create<State>()(
         set((s) => ({
           vani: {
             ...s.vani,
-            [commessaId]: (s.vani[commessaId] ?? []).map((v) => (v.id === id ? { ...v, ...patch } : v)),
+            [commessaId]: (s.vani[commessaId] ?? EMPTY_VANI).map((v) => (v.id === id ? { ...v, ...patch } : v)),
           },
         })),
 
       eliminaVano: (commessaId, id) =>
         set((s) => ({
-          vani: { ...s.vani, [commessaId]: (s.vani[commessaId] ?? []).filter((v) => v.id !== id) },
+          vani: { ...s.vani, [commessaId]: (s.vani[commessaId] ?? EMPTY_VANI).filter((v) => v.id !== id) },
         })),
 
       aggiungiVoce: (commessaId, v) =>
         set((s) => ({
-          voci: { ...s.voci, [commessaId]: [...(s.voci[commessaId] ?? []), { ...v, id: uid() }] },
+          voci: { ...s.voci, [commessaId]: [...(s.voci[commessaId] ?? EMPTY_VOCI), { ...v, id: uid() }] },
         })),
 
       aggiornaVoce: (commessaId, id, patch) =>
         set((s) => ({
           voci: {
             ...s.voci,
-            [commessaId]: (s.voci[commessaId] ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)),
+            [commessaId]: (s.voci[commessaId] ?? EMPTY_VOCI).map((c) => (c.id === id ? { ...c, ...patch } : c)),
           },
         })),
 
       eliminaVoce: (commessaId, id) =>
         set((s) => ({
-          voci: { ...s.voci, [commessaId]: (s.voci[commessaId] ?? []).filter((c) => c.id !== id) },
+          voci: { ...s.voci, [commessaId]: (s.voci[commessaId] ?? EMPTY_VOCI).filter((c) => c.id !== id) },
         })),
 
       aggiungiInfisso: (commessaId, v) =>
@@ -290,4 +293,4 @@ export const useAttiva = () => {
   return { attivaId, commessa };
 };
 
-export { PREZZARIO_LAZIO };
+export { PREZZARIO_LAZIO, EMPTY_VANI, EMPTY_VOCI };

@@ -12,7 +12,7 @@ import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
 import { Impianti } from '@/modules/Impianti';
 import { Computo } from '@/modules/Computo';
 import { Bozze } from '@/modules/Bozze';
-import { useStore, useAttiva } from '@/lib/store';
+import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
 import { getSupabase } from '@/lib/supabase';
 import { caricaDaSupabase, sincronizzaCommessaSuSupabase } from '@/lib/supabaseSync';
 
@@ -71,9 +71,10 @@ function AppContent() {
   const [syncMsg, setSyncMsg] = useState<string>('');
   const [isHydrated, setIsHydrated] = useState(false);
 
-  const { commessa } = useAttiva();
-  const vani = useStore((s) => (commessa ? s.vani[commessa.id] ?? [] : []));
-  const voci = useStore((s) => (commessa ? s.voci[commessa.id] ?? [] : []));
+  const attivaId = useStore((s) => s.attivaId);
+  const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
+  const vani = useStore((s) => (s.attivaId ? s.vani[s.attivaId] ?? EMPTY_VANI : EMPTY_VANI));
+  const voci = useStore((s) => (s.attivaId ? s.voci[s.attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
   const caricaCataloghi = useStore((s) => s.caricaCataloghi);
 
   const skipNextAutoSaveRef = useRef(true);
@@ -171,7 +172,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!isHydrated || !commessa || !user) return;
+    if (!isHydrated || !attivaId || !user) return;
 
     if (skipNextAutoSaveRef.current) {
       skipNextAutoSaveRef.current = false;
@@ -186,7 +187,7 @@ function AppContent() {
     }, 2000);
 
     return () => window.clearTimeout(timer);
-  }, [isHydrated, commessa?.id, commessa, vani, voci, user?.id, handleSyncCloud]);
+  }, [isHydrated, attivaId, commessa, vani, voci, user?.id, handleSyncCloud]);
 
   const handleLogout = async () => {
     const sb = getSupabase();
