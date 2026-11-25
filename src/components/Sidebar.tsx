@@ -17,6 +17,8 @@ export const SECTIONS: { id: SectionId; label: string; icon: typeof LayoutList }
   { id: 'atti', label: '6. Atti SUET, FIR & L.132/2025', icon: FileText },
 ];
 
+const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false, false];
+
 interface Props {
   section: SectionId;
   onChange: (s: SectionId) => void;
@@ -127,7 +129,7 @@ export function Sidebar({
   const creaCommessa = useStore((s) => s.creaCommessa);
   const eliminaCommessa = useStore((s) => s.eliminaCommessa);
   const aggiornaCommessa = useStore((s) => s.aggiornaCommessa);
-  const steps = useStore((s) => s.steps[s.attivaId ?? ''] ?? Array(7).fill(false));
+  const steps = useStore((s) => (s.attivaId ? s.steps[s.attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
   const [open, setOpen] = useState(false);
   const [synapsOpen, setSynapsOpen] = useState(false);
   const [synapsInput, setSynapsInput] = useState('');
@@ -284,7 +286,7 @@ export function Sidebar({
           {open && (
             <div className="absolute left-4 right-4 mt-1 bg-slate-800 border border-slate-700 rounded shadow-xl z-20 py-1 max-h-72 overflow-y-auto">
               {commesse.map((c) => {
-                const st = useStore.getState().steps[c.id] ?? Array(7).fill(false);
+                const st = useStore.getState().steps[c.id] ?? EMPTY_STEPS;
                 const p = Math.round((st.filter(Boolean).length / 7) * 100);
                 return (
                   <button
