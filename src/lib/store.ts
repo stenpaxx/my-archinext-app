@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AbacoInfissi, AbacoSanitari, Commessa, Vano, VoceComputo } from './types';
 import { PREZZARIO_LAZIO } from '@/data/prezzarioLazio';
+import {
+  fetchCataloghiNormativi,
+  type VoceNtaPrg,
+  type VocePrezzario,
+  type VoceRegolamentoEdilizio,
+} from './cataloghiService';
 
 interface State {
   commesse: Commessa[];
@@ -11,6 +17,10 @@ interface State {
   infissi: Record<string, AbacoInfissi[]>;
   sanitari: Record<string, AbacoSanitari[]>;
   steps: Record<string, boolean[]>;
+  catalogoNta: VoceNtaPrg[];
+  catalogoRegolamento: VoceRegolamentoEdilizio[];
+  catalogoPrezzari: VocePrezzario[];
+  caricaCataloghi: () => Promise<void>;
   creaCommessa: (c: Omit<Commessa, 'id' | 'createdAt'>) => void;
   eliminaCommessa: (id: string) => void;
   setAttiva: (id: string) => void;
@@ -102,12 +112,28 @@ const demoState = {
   infissi: { [demoCommessa.id]: demoInfissi },
   sanitari: { [demoCommessa.id]: demoSanitari },
   steps: { [demoCommessa.id]: [true, true, false, false, false, false, false] },
+  catalogoNta: [] as VoceNtaPrg[],
+  catalogoRegolamento: [] as VoceRegolamentoEdilizio[],
+  catalogoPrezzari: [] as VocePrezzario[],
 };
 
 export const useStore = create<State>()(
   persist(
     (set) => ({
       ...demoState,
+
+      caricaCataloghi: async () => {
+        try {
+          const data = await fetchCataloghiNormativi();
+          set({
+            catalogoNta: data.nta,
+            catalogoRegolamento: data.regolamento,
+            catalogoPrezzari: data.prezzari,
+          });
+        } catch (err) {
+          console.warn('Caricamento cataloghi normativi:', err);
+        }
+      },
 
       creaCommessa: (c) => {
         const id = uid();
@@ -235,6 +261,15 @@ export const useStore = create<State>()(
     }),
     {
       name: 'gestionale-dt-roma-v2',
+      partialize: (state) => ({
+        commesse: state.commesse,
+        attivaId: state.attivaId,
+        vani: state.vani,
+        voci: state.voci,
+        infissi: state.infissi,
+        sanitari: state.sanitari,
+        steps: state.steps,
+      }),
       onRehydrateStorage: () => (state) => {
         if (state && state.commesse.length === 0) {
           useStore.setState(demoState);

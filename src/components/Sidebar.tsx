@@ -1,10 +1,10 @@
 import {
   LayoutList, Grid2x2, Code2, Plug, Calculator, FileText,
-  FolderKanban, Plus, Trash2, Check, ChevronDown, FileUp, X,
+  FolderKanban, Plus, Trash2, Check, ChevronDown, FileUp, X, BookOpen,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
-import type { Commessa, VanoRAI, VoceComputo } from '@/lib/types';
+import type { Commessa, Vano, VoceComputo } from '@/lib/types';
 
 export type SectionId = 'due-diligence' | 'rai' | 'lisp' | 'impianti' | 'computo' | 'atti';
 
@@ -20,18 +20,18 @@ export const SECTIONS: { id: SectionId; label: string; icon: typeof LayoutList }
 interface Props {
   section: SectionId;
   onChange: (s: SectionId) => void;
+  onOpenCatalogo: () => void;
 }
 
 function parseSynapsPayload(raw: string): {
   commessaPatch?: Partial<Commessa>;
-  vani?: Omit<VanoRAI, 'id'>[];
+  vani?: Omit<Vano, 'id'>[];
   voci?: Omit<VoceComputo, 'id'>[];
   error?: string;
 } {
   const trimmed = raw.trim();
   if (!trimmed) return { error: 'Incolla o carica un output di Synaps.app prima di procedere.' };
 
-  // 1. Tentativo JSON (esportazione strutturata Synaps.app)
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       const parsed = JSON.parse(trimmed);
@@ -54,13 +54,13 @@ function parseSynapsPayload(raw: string): {
             ? source.rooms
             : [];
 
-      const vani: Omit<VanoRAI, 'id'>[] = rawVani.map((item: Record<string, unknown>, idx: number) => ({
+      const vani: Omit<Vano, 'id'>[] = rawVani.map((item: Record<string, unknown>, idx: number) => ({
         nome: String(item.nome ?? item.name ?? item.ambiente ?? `Vano ${idx + 1}`),
         destinazione: String(item.destinazione ?? item.uso ?? 'Soggiorno'),
         superficie: Number(item.superficie ?? item.mq ?? item.area ?? 0) || 0,
         superfFinestrata: Number(item.superfFinestrata ?? item.finestra ?? item.aeroilluminante ?? 0) || 0,
-        altezza: Number(item.altezza ?? item.h ?? 2.7) || 2.7,
-        note: String(item.note ?? 'Importato da Synaps.app'),
+        altezzaMedia: Number(item.altezzaMedia ?? item.altezza ?? item.h ?? 2.7) || 2.7,
+        vmc: Boolean(item.vmc ?? false),
       }));
 
       const rawVoci = Array.isArray(source.voci)
@@ -70,9 +70,10 @@ function parseSynapsPayload(raw: string): {
           : [];
 
       const voci: Omit<VoceComputo, 'id'>[] = rawVoci.map((item: Record<string, unknown>, idx: number) => ({
-        codice: String(item.codice ?? `SYN-${String(idx + 1).padStart(2, '0')}`),
+        codicePrezzario: String(item.codicePrezzario ?? item.codice ?? `SYN-${String(idx + 1).padStart(2, '0')}`),
+        wbs: String(item.wbs ?? item.categoria ?? 'Synaps'),
         descrizione: String(item.descrizione ?? item.voce ?? 'Voce da Synaps.app'),
-        unitaMisura: String(item.unitaMisura ?? item.um ?? 'mq'),
+        um: String(item.um ?? item.unitaMisura ?? 'mq'),
         quantita: Number(item.quantita ?? item.qta ?? 0) || 0,
         prezzoUnitario: Number(item.prezzoUnitario ?? item.prezzo ?? 0) || 0,
         oneriSicurezza: Boolean(item.oneriSicurezza ?? false),
@@ -84,11 +85,10 @@ function parseSynapsPayload(raw: string): {
     }
   }
 
-  // 2. Tentativo CSV / TSV (es. Nome;Destinazione;Superficie;Finestra;Altezza)
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length > 0) {
     const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-    const vani: Omit<VanoRAI, 'id'>[] = [];
+    const vani: Omit<Vano, 'id'>[] = [];
     for (const line of lines) {
       const cols = line.split(sep).map((c) => c.trim());
       if (cols.length >= 2 && !Number.isNaN(Number(cols[2]?.replace(',', '.')))) {
@@ -97,8 +97,8 @@ function parseSynapsPayload(raw: string): {
           destinazione: cols[1] || 'Soggiorno',
           superficie: Number((cols[2] || '0').replace(',', '.')) || 0,
           superfFinestrata: Number((cols[3] || '0').replace(',', '.')) || 0,
-          altezza: Number((cols[4] || '2.7').replace(',', '.')) || 2.7,
-          note: cols[5] || 'Importato da Synaps.app (CSV)',
+          altezzaMedia: Number((cols[4] || '2.7').replace(',', '.')) || 2.7,
+          vmc: false,
         });
       }
     }
@@ -112,7 +112,7 @@ function parseSynapsPayload(raw: string): {
   };
 }
 
-export function Sidebar({ section, onChange }: Props) {
+export function Sidebar({ section, onChange, onOpenCatalogo }: Props) {
   const commesse = useStore((s) => s.commesse);
   const attivaId = useStore((s) => s.attivaId);
   const setAttiva = useStore((s) => s.setAttiva);
@@ -300,6 +300,15 @@ export function Sidebar({ section, onChange }: Props) {
             <FileUp size={13} className="text-sky-400" />
             <span>Importa output Synaps.app</span>
           </button>
+
+          <button
+            type="button"
+            onClick={onOpenCatalogo}
+            className="mt-2 w-full py-1.5 px-3 rounded border border-slate-700 hover:border-emerald-500/60 bg-slate-800/40 hover:bg-slate-800 text-xs text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <BookOpen size={13} className="text-emerald-400" />
+            <span>Cassetto Documentale</span>
+          </button>
         </div>
 
         <div className="px-4 py-3 border-b border-slate-800">
@@ -337,7 +346,6 @@ export function Sidebar({ section, onChange }: Props) {
         </div>
       </aside>
 
-      {/* Modale esperimenti con output di Synaps.app */}
       {synapsOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white text-slate-900 rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden">

@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Cloud, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Cloud, CheckCircle2, Loader2, AlertCircle, LogIn, LogOut, UserCheck, ShieldCheck, Bot } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
+import { CatalogoAdminModal } from '@/components/CatalogoAdminModal';
+import { AuthModal } from '@/components/AuthModal';
+import { LegalModal, type LegalTab } from '@/components/LegalModal';
 import { DueDiligence } from '@/modules/DueDiligence';
 import { AuditRAI } from '@/modules/AuditRAI';
 import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
@@ -9,68 +13,163 @@ import { Impianti } from '@/modules/Impianti';
 import { Computo } from '@/modules/Computo';
 import { Bozze } from '@/modules/Bozze';
 import { useStore, useAttiva } from '@/lib/store';
+import { getSupabase } from '@/lib/supabase';
 import { caricaDaSupabase, sincronizzaCommessaSuSupabase } from '@/lib/supabaseSync';
 
 function App() {
   const [section, setSection] = useState<SectionId>('due-diligence');
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [catalogoOpen, setCatalogoOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
+  const [user, setUser] = useState<User | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
   const [syncMsg, setSyncMsg] = useState<string>('');
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const { commessa } = useAttiva();
   const vani = useStore((s) => (commessa ? s.vani[commessa.id] ?? [] : []));
   const voci = useStore((s) => (commessa ? s.voci[commessa.id] ?? [] : []));
+  const caricaCataloghi = useStore((s) => s.caricaCataloghi);
 
-  useEffect(() => {
-    caricaDaSupabase()
-      .then((cloudData) => {
-        if (cloudData && cloudData.commesse.length > 0) {
-          useStore.setState((prev) => ({
-            commesse: cloudData.commesse,
-            attivaId: cloudData.commesse[0].id,
-            vani: { ...prev.vani, ...cloudData.vani },
-            voci: { ...prev.voci, ...cloudData.voci },
-          }));
-        }
-      })
-      .catch((err) => {
-        console.warn('Lettura iniziale Supabase:', err);
-      });
+  const isFirstRenderAfterHydration = useRef(true);
+
+  const openLegal = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setLegalOpen(true);
+  };
+
+  const loadUserCloudData = useCallback(async () => {
+    try {
+      const cloudData = await caricaDaSupabase();
+      if (cloudData && cloudData.commesse.length > 0) {
+        useStore.setState((prev) => ({
+          commesse: cloudData.commesse,
+          attivaId: cloudData.commesse[0].id,
+          vani: { ...prev.vani, ...cloudData.vani },
+          voci: { ...prev.voci, ...cloudData.voci },
+        }));
+      }
+    } catch (err) {
+      console.warn('Lettura iniziale Supabase:', err);
+    } finally {
+      setIsHydrated(true);
+    }
   }, []);
 
-  const handleSyncCloud = async () => {
+  useEffect(() => {
+    caricaCataloghi();
+
+    const sb = getSupabase();
+    if (!sb) {
+      setIsHydrated(true);
+      return;
+    }
+
+    sb.auth.getUser().then(({ data }) => {
+      setUser(data.user ?? null);
+      if (data.user) {
+        loadUserCloudData();
+      } else {
+        setIsHydrated(true);
+      }
+    });
+
+    const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+      if (nextUser) {
+        loadUserCloudData();
+      } else {
+        setSyncStatus('idle');
+        setSyncMsg('');
+      }
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [caricaCataloghi, loadUserCloudData]);
+
+  const handleSyncCloud = useCallback(async () => {
     if (!commessa) return;
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
     setSyncStatus('saving');
-    setSyncMsg('');
+    setSyncMsg('Auto-salvataggio...');
     try {
       await sincronizzaCommessaSuSupabase(commessa, vani, voci);
+      const ora = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
       setSyncStatus('saved');
-      setSyncMsg('Sincronizzato su Supabase');
-      setTimeout(() => setSyncStatus('idle'), 3500);
+      setSyncMsg(`Salvato (${ora})`);
     } catch (err: unknown) {
       setSyncStatus('error');
       setSyncMsg(err instanceof Error ? err.message : 'Errore sincronizzazione');
     }
+  }, [commessa, vani, voci, user]);
+
+  useEffect(() => {
+    if (!isHydrated || !commessa || !user) return;
+
+    if (isFirstRenderAfterHydration.current) {
+      isFirstRenderAfterHydration.current = false;
+      return;
+    }
+
+    setSyncStatus('pending');
+    setSyncMsg('Modifiche in coda...');
+
+    const timer = window.setTimeout(() => {
+      handleSyncCloud();
+    }, 2000);
+
+    return () => window.clearTimeout(timer);
+  }, [isHydrated, commessa, vani, voci, user, handleSyncCloud]);
+
+  const handleLogout = async () => {
+    const sb = getSupabase();
+    if (sb) await sb.auth.signOut();
   };
 
   return (
     <div className="min-h-screen bg-slate-100/90 flex">
-      <Sidebar section={section} onChange={setSection} />
+      <Sidebar
+        section={section}
+        onChange={setSection}
+        onOpenCatalogo={() => setCatalogoOpen(true)}
+      />
 
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-6 py-2.5 flex items-center justify-between">
-          <div className="text-xs text-slate-500">
-            Database Cloud: <span className="font-medium text-slate-700">Supabase PostgreSQL</span>
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-6 py-2.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span>Cloud RLS:</span>
+            {user ? (
+              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+                <UserCheck className="w-3.5 h-3.5" />
+                {user.email}
+              </span>
+            ) : (
+              <span className="font-medium text-amber-700">Modalità locale (accedi per sincronizzare)</span>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2.5">
             {syncMsg && (
               <span
                 className={`text-xs font-medium ${
-                  syncStatus === 'error' ? 'text-red-600' : 'text-emerald-600'
+                  syncStatus === 'error'
+                    ? 'text-red-600'
+                    : syncStatus === 'pending'
+                      ? 'text-amber-600'
+                      : 'text-emerald-600'
                 }`}
               >
                 {syncMsg}
               </span>
             )}
+
             <button
               onClick={handleSyncCloud}
               disabled={syncStatus === 'saving' || !commessa}
@@ -79,13 +178,33 @@ function App() {
               {syncStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {syncStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
               {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
-              {syncStatus === 'idle' && <Cloud className="w-3.5 h-3.5" />}
-              {syncStatus === 'saving' ? 'Salvataggio...' : 'Salva su Supabase'}
+              {(syncStatus === 'idle' || syncStatus === 'pending') && <Cloud className="w-3.5 h-3.5" />}
+              {user ? (syncStatus === 'saving' ? 'Salvataggio...' : 'Salva ora') : 'Accedi per salvare'}
             </button>
+
+            {user ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Esci dall'account"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Esci</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Login</span>
+              </button>
+            )}
           </div>
         </header>
 
-        {/* Layout a 2 colonne a piena larghezza senza strozzature centrali */}
         <div className="flex-1 w-full px-6 py-5">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
             <div className="xl:col-span-8 min-w-0 [&_.max-w-4xl]:max-w-none [&_.max-w-5xl]:max-w-none [&_.max-w-6xl]:max-w-none [&_.max-w-7xl]:max-w-none [&_table]:w-full">
@@ -102,7 +221,62 @@ function App() {
             </div>
           </div>
         </div>
+
+        <footer className="border-t border-slate-200 bg-white/80 px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
+          <div className="flex items-center gap-2">
+            <Bot className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              Supporto decisionale assistito da AI (Reg. UE 2024/1689): gli elaborati richiedono verifica e asseverazione del tecnico abilitato.
+            </span>
+          </div>
+          <div className="flex items-center gap-4 font-medium text-slate-600">
+            <button
+              type="button"
+              onClick={() => openLegal('privacy')}
+              className="inline-flex items-center gap-1 hover:text-slate-900"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Privacy & GDPR</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openLegal('ai-act')}
+              className="hover:text-slate-900"
+            >
+              Trasparenza AI Act
+            </button>
+            <button
+              type="button"
+              onClick={() => openLegal('disclaimer')}
+              className="hover:text-slate-900"
+            >
+              Note Legali
+            </button>
+          </div>
+        </footer>
       </main>
+
+      <CatalogoAdminModal
+        open={catalogoOpen}
+        onClose={() => setCatalogoOpen(false)}
+        onUpdated={() => caricaCataloghi()}
+      />
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={() => {
+          isFirstRenderAfterHydration.current = false;
+          handleSyncCloud();
+        }}
+      />
+
+      <LegalModal
+        open={legalOpen}
+        initialTab={legalTab}
+        onClose={() => setLegalOpen(false)}
+        userEmail={user?.email ?? null}
+      />
     </div>
   );
 }

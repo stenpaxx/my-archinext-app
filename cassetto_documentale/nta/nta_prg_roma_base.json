@@ -1,0 +1,35 @@
+[
+    {
+      "sigla": "T1",
+      "nome": "Tessuto di origine medievale",
+      "macro_ambito": "Citta Storica",
+      "attuazione": "Intervento diretto",
+      "titolo_indicativo": "CILA / SCIA / PdC",
+      "ammessi": ["MO", "MS", "RC", "RE1"],
+      "prescrizioni": "Tutela dell'impianto tipologico e strutturale storico; frazionamenti subordinati al rispetto delle superfici minime e dei caratteri distributivi originari.",
+      "note": "Verificare sempre Carta per la Qualita e vincoli Parte II/III D.Lgs. 42/2004.",
+      "versione": "NTA-PRG-Roma"
+    },
+    {
+      "sigla": "T2",
+      "nome": "Tessuto di espansione otto-novecentesca a isolati",
+      "macro_ambito": "Citta Storica",
+      "attuazione": "Intervento diretto",
+      "titolo_indicativo": "CILA / SCIA",
+      "ammessi": ["MO", "MS", "RC", "RE1", "RE2"],
+      "prescrizioni": "Ammessi frazionamenti e accorpamenti nel rispetto della partitura delle facciate e dei requisiti igienico-sanitari.",
+      "note": "Controllare eventuali elementi tutelati in Carta per la Qualita.",
+      "versione": "NTA-PRG-Roma"
+    },
+    {
+      "sigla": "T7",
+      "nome": "Tessuto prevalentemente residenziale della Citta Consolidata",
+      "macro_ambito": "Citta Consolidata",
+      "attuazione": "Intervento diretto",
+      "titolo_indicativo": "CILA / SCIA / PdC",
+      "ammessi": ["MO", "MS", "RC", "RE", "AMP"],
+      "prescrizioni": "Ammessa ristrutturazione edilizia e frazionamento con verifica dotazione parcheggi ove richiesta dal carico urbanistico.",
+      "note": "Applicabilita Titolo III bis REC se demo-ricostruzione o incremento > 15%.",
+      "versione": "NTA-PRG-Roma"
+    }
+  ]

@@ -1,0 +1,71 @@
+[
+    {
+      "articolo": "Art. 40",
+      "titolo": "Abitazioni - Superfici, altezze minime e RAI",
+      "categoria": "Requisiti igienico-sanitari",
+      "parametri_json": {
+        "altezza_min_abitabili_m": 2.70,
+        "sup_min_camera_singola_mq": 9.00,
+        "sup_min_camera_doppia_mq": 14.00,
+        "sup_min_soggiorno_mq": 14.00,
+        "sup_min_monostanza_1p_mq": 28.00,
+        "sup_min_monostanza_2p_mq": 38.00,
+        "rai_minimo": 0.125,
+        "fattore_luce_diurna_min_pct": 2.0
+      },
+      "testo_sintesi": "Altezza minima utile 2,70 m; camera singola >= 9 mq, doppia >= 14 mq, soggiorno >= 14 mq; superficie finestrata apribile >= 1/8 della superficie del pavimento e FLDm >= 2%.",
+      "note_operative": "Obbligatorio nei frazionamenti e nelle nuove suddivisioni; verificare preesistenze legittimate negli edifici esistenti.",
+      "versione": "REC-5261+DAC90-2026"
+    },
+    {
+      "articolo": "Art. 41-42",
+      "titolo": "Cucine, bagni, corridoi e ripostigli",
+      "categoria": "Requisiti igienico-sanitari",
+      "parametri_json": {
+        "altezza_min_bagni_corridoi_m": 2.40,
+        "cubatura_min_cucina_mc": 15.0,
+        "finestra_min_cucina_mq": 1.50,
+        "sup_max_ripostiglio_finestrato_mq": 4.00
+      },
+      "testo_sintesi": "Altezza minima bagni, corridoi, disimpegni e ripostigli >= 2,40 m. Cucine con cubatura >= 15 mc e finestra >= 1,50 mq (salvo posto cottura comunicante con soggiorno dotato di aspirazione forzata). Bagni ciechi ammessi con aspirazione meccanica e divieto di fiamma libera.",
+      "note_operative": "Ambienti finestrati > 4 mq non sono qualificabili come ripostigli.",
+      "versione": "REC-5261+DAC90-2026"
+    },
+    {
+      "articolo": "Art. 43",
+      "titolo": "Sottotetti abitabili",
+      "categoria": "Superfici e altezze minime",
+      "parametri_json": {
+        "cubatura_min_mc": 25.0,
+        "altezza_min_imposta_m": 2.00,
+        "altezza_media_min_m": 2.50,
+        "camera_aria_ventilata_cm": 25
+      },
+      "testo_sintesi": "Cubatura >= 25 mc, altezza minima all'imposta >= 2,00 m e media >= 2,50 m, controsoffitto con camera d'aria ventilata >= 25 cm.",
+      "note_operative": "Coordinare con eventuale disciplina regionale sul recupero dei sottotetti.",
+      "versione": "REC-5261+DAC90-2026"
+    },
+    {
+      "articolo": "Art. 48 bis - 48 duodecies",
+      "titolo": "Titolo III bis - Mitigazione climatica, invarianza idraulica e incentivi MBE",
+      "categoria": "Sostenibilita e Titolo III bis",
+      "parametri_json": {
+        "soglia_ampliamento_ristrutturazione_pct": 15,
+        "cisterna_meteoriche_l_mq": 50,
+        "cisterna_meteoriche_tetto_verde_l_mq": 25,
+        "vasca_laminazione_l_mq": 30,
+        "portata_scarico_max_ls_mq": 0.005,
+        "sup_permeabile_min_pct": 50,
+        "verde_alberato_min_pct": 20,
+        "ombreggiamento_min_pct": 30,
+        "sri_min_falda_e_pertinenze": 29,
+        "sri_min_copertura_piana": 76,
+        "materiali_riciclati_min_pct": 15,
+        "incentivo_max_sul_pct": 5,
+        "punteggio_pieno_mbe": 100
+      },
+      "testo_sintesi": "Requisiti obbligatori per nuova costruzione, ristrutturazione urbanistica e ristrutturazione edilizia con demo-ricostruzione o incremento > 15% SUL/volume. Incentivo MBE fino al +5% SUL con punteggio >= 100.",
+      "note_operative": "Efficacia subordinata alla D.D. di approvazione dello schema di Relazione tecnica di compatibilita ambientale (DAC n. 90/2026).",
+      "versione": "DAC90-2026"
+    }
+  ]

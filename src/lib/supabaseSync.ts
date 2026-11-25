@@ -8,6 +8,9 @@ export async function caricaDaSupabase() {
   const sb = getSupabase();
   if (!sb) return null;
 
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+
   const { data: commesseRows, error } = await sb
     .from('commesse')
     .select('*')
@@ -78,12 +81,16 @@ export async function sincronizzaCommessaSuSupabase(
   const sb = getSupabase();
   if (!sb) throw new Error('Client Supabase non configurato');
 
-  const safeCommessaId = isUuid(c.id)
-    ? c.id
-    : '00000000-0000-4000-8000-000000000014';
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) {
+    throw new Error('Effettua il login per sincronizzare su Cloud');
+  }
+
+  const safeCommessaId = isUuid(c.id) ? c.id : crypto.randomUUID();
 
   const { error: errComm } = await sb.from('commesse').upsert({
     id: safeCommessaId,
+    user_id: user.id,
     codice_commessa: c.codice,
     titolo: c.titolo,
     indirizzo: c.indirizzo,
