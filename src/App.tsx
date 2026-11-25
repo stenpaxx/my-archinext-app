@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Cloud, CheckCircle2, Loader2, AlertCircle, LogIn, LogOut, UserCheck, ShieldCheck, Bot, Menu } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
@@ -16,7 +16,50 @@ import { useStore, useAttiva } from '@/lib/store';
 import { getSupabase } from '@/lib/supabase';
 import { caricaDaSupabase, sincronizzaCommessaSuSupabase } from '@/lib/supabaseSync';
 
-function App() {
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; errorMsg: string; stack: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '', stack: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      errorMsg: error?.message || String(error),
+      stack: error?.stack || '',
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-white p-6 font-mono text-xs overflow-auto">
+          <h1 className="text-base font-bold text-red-400 mb-2">Errore catturato in runtime</h1>
+          <p className="mb-4 text-amber-300">{this.state.errorMsg}</p>
+          <pre className="whitespace-pre-wrap text-slate-300 bg-slate-900 p-4 rounded border border-slate-800">
+            {this.state.stack}
+          </pre>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.clear();
+              window.location.reload();
+            }}
+            className="mt-4 px-4 py-2 bg-sky-600 text-white rounded font-sans font-semibold"
+          >
+            Pulisci cache locale e ricarica
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppContent() {
   const [section, setSection] = useState<SectionId>('due-diligence');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [catalogoOpen, setCatalogoOpen] = useState(false);
@@ -308,4 +351,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
