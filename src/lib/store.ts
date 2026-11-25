@@ -270,10 +270,15 @@ export const useStore = create<State>()(
         sanitari: state.sanitari,
         steps: state.steps,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (state && state.commesse.length === 0) {
-          useStore.setState(demoState);
-        }
+      merge: (persistedState, currentState) => {
+        const p = (persistedState as Partial<State> | undefined) ?? {};
+        const hasCommesse = Array.isArray(p.commesse) && p.commesse.length > 0;
+        return {
+          ...currentState,
+          ...p,
+          commesse: hasCommesse ? p.commesse! : currentState.commesse,
+          attivaId: p.attivaId ?? (hasCommesse ? p.commesse![0].id : currentState.attivaId),
+        };
       },
     }
   )
