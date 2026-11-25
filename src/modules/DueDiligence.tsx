@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Building2, ChevronDown, Upload, BadgeCheck, Landmark, AlertTriangle, Info, Compass,
 } from 'lucide-react';
-import { useStore, useAttiva } from '@/lib/store';
+import { useStore } from '@/lib/store';
 import { MUNICIPI, STEP_LABELS, TESSUTI_PRG, type Commessa, type TipologiaCommessa } from '@/lib/types';
 
 const TIPOLOGIE: TipologiaCommessa[] = [
@@ -11,6 +11,10 @@ const TIPOLOGIE: TipologiaCommessa[] = [
   'Ristrutturazione SCIA',
   'Cambio d’uso SCIA',
 ];
+
+const CATEGORIE_CATASTALI = ['A/2', 'A/3', 'A/4', 'A/7', 'A/8', 'A/9', 'A/10', 'A/11', 'C/1'];
+
+const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false, false];
 
 interface NtaTessutoMeta {
   macroAmbito: string;
@@ -82,19 +86,64 @@ function estraiSiglaTessuto(valore?: string): string {
 const inputCls =
   'w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-[13px] text-slate-800 focus:outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600 transition-colors';
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function TextInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (val: string) => void;
+}) {
   return (
     <label className="block">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1">{label}</span>
-      {children}
+      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1">
+        {label}
+      </span>
+      <input
+        className={inputCls}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+function SelectInput({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (val: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1">
+        {label}
+      </span>
+      <select className={inputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
 
 export function DueDiligence() {
-  const { commessa } = useAttiva();
+  const attivaId = useStore((s) => s.attivaId);
+  const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
   const aggiornaCommessa = useStore((s) => s.aggiornaCommessa);
-  const steps = useStore((s) => s.steps[commessa?.id ?? ''] ?? Array(7).fill(false));
+  const steps = useStore((s) => (attivaId ? s.steps[attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
   const toggleStep = useStore((s) => s.toggleStep);
   const [openDati, setOpenDati] = useState(false);
 
@@ -128,7 +177,6 @@ export function DueDiligence() {
         <p className="text-sm text-slate-500 mt-1">Anagrafica, catastale e fattibilità urbanistica secondo le NTA del PRG di Roma Capitale.</p>
       </header>
 
-      {/* Scheda commessa */}
       <section className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-8">
         <div className="bg-slate-900 px-6 py-5 flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -156,6 +204,7 @@ export function DueDiligence() {
         </div>
 
         <button
+          type="button"
           onClick={() => setOpenDati(!openDati)}
           className="w-full px-6 py-3 flex items-center gap-2 text-sm font-medium text-slate-700 hover:bg-slate-50 border-b border-slate-200 transition-colors"
         >
@@ -165,27 +214,15 @@ export function DueDiligence() {
 
         {openDati && (
           <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Titolo"><input className={inputCls} value={commessa.titolo} onChange={(e) => upd({ titolo: e.target.value })} /></Field>
-            <Field label="Indirizzo (Roma)"><input className={inputCls} value={commessa.indirizzo} onChange={(e) => upd({ indirizzo: e.target.value })} placeholder="Via ... , 00184 Roma RM" /></Field>
-            <Field label="Municipio">
-              <select className={inputCls} value={commessa.municipio} onChange={(e) => upd({ municipio: e.target.value })}>
-                {MUNICIPI.map((m) => <option key={m}>{m}</option>)}
-              </select>
-            </Field>
-            <Field label="Foglio"><input className={inputCls} value={commessa.foglio} onChange={(e) => upd({ foglio: e.target.value })} /></Field>
-            <Field label="Particella"><input className={inputCls} value={commessa.particella} onChange={(e) => upd({ particella: e.target.value })} /></Field>
-            <Field label="Subalterno"><input className={inputCls} value={commessa.subalterno} onChange={(e) => upd({ subalterno: e.target.value })} /></Field>
-            <Field label="Categoria catastale">
-              <select className={inputCls} value={commessa.categoriaCatastale} onChange={(e) => upd({ categoriaCatastale: e.target.value })}>
-                {['A/2', 'A/3', 'A/4', 'A/7', 'A/8', 'A/9', 'A/10', 'A/11', 'C/1'].map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="Rendita catastale"><input className={inputCls} value={commessa.rendita} onChange={(e) => upd({ rendita: e.target.value })} placeholder="€ 0.000,00" /></Field>
-            <Field label="Tipologia intervento">
-              <select className={inputCls} value={commessa.tipologia} onChange={(e) => upd({ tipologia: e.target.value as TipologiaCommessa })}>
-                {TIPOLOGIE.map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </Field>
+            <TextInput label="Titolo" value={commessa.titolo} onChange={(v) => upd({ titolo: v })} />
+            <TextInput label="Indirizzo (Roma)" value={commessa.indirizzo} placeholder="Via ... , 00184 Roma RM" onChange={(v) => upd({ indirizzo: v })} />
+            <SelectInput label="Municipio" value={commessa.municipio} options={[...MUNICIPI]} onChange={(v) => upd({ municipio: v })} />
+            <TextInput label="Foglio" value={commessa.foglio} onChange={(v) => upd({ foglio: v })} />
+            <TextInput label="Particella" value={commessa.particella} onChange={(v) => upd({ particella: v })} />
+            <TextInput label="Subalterno" value={commessa.subalterno} onChange={(v) => upd({ subalterno: v })} />
+            <SelectInput label="Categoria catastale" value={commessa.categoriaCatastale} options={CATEGORIE_CATASTALI} onChange={(v) => upd({ categoriaCatastale: v })} />
+            <TextInput label="Rendita catastale" value={commessa.rendita} placeholder="€ 0.000,00" onChange={(v) => upd({ rendita: v })} />
+            <SelectInput label="Tipologia intervento" value={commessa.tipologia} options={TIPOLOGIE} onChange={(v) => upd({ tipologia: v as TipologiaCommessa })} />
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={commessa.cartaQualita} onChange={(e) => upd({ cartaQualita: e.target.checked })} className="w-4 h-4 accent-sky-600" />
               <span className="text-[13px] text-slate-700">Carta per la Qualità</span>
@@ -204,7 +241,6 @@ export function DueDiligence() {
         )}
       </section>
 
-      {/* Tessuto PRG */}
       <section className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">Tessuto urbanistico PRG Roma Capitale</h3>
@@ -215,19 +251,14 @@ export function DueDiligence() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-3">
-            <Field label="Tessuto / Zona">
-              <select
-                className={inputCls}
-                value={siglaCorrente}
-                onChange={(e) => upd({ tessutoPRG: e.target.value })}
-              >
+            <label className="block">
+              <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1">Tessuto / Zona</span>
+              <select className={inputCls} value={siglaCorrente} onChange={(e) => upd({ tessutoPRG: e.target.value })}>
                 {TESSUTI_PRG.map((t) => (
-                  <option key={t.sigla} value={t.sigla}>
-                    {t.sigla} — {t.nome}
-                  </option>
+                  <option key={t.sigla} value={t.sigla}>{t.sigla} — {t.nome}</option>
                 ))}
               </select>
-            </Field>
+            </label>
 
             <div className="rounded bg-slate-50 border border-slate-200 p-3 text-xs space-y-1.5">
               <div>
@@ -285,7 +316,6 @@ export function DueDiligence() {
         </div>
       </section>
 
-      {/* Avanzamento */}
       <section className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">Avanzamento pratiche</h3>
@@ -297,13 +327,13 @@ export function DueDiligence() {
         <p className="text-xs text-slate-500 mt-2">{steps.filter(Boolean).length} di 7 step completati</p>
       </section>
 
-      {/* Checklist 7 step */}
       <section className="space-y-2">
         {STEP_LABELS.map((label, i) => {
           const done = steps[i];
           return (
             <button
               key={i}
+              type="button"
               onClick={() => toggleStep(commessa.id, i)}
               className={`w-full text-left flex items-start gap-3 rounded-lg border px-4 py-3.5 transition-all group ${
                 done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-slate-200 hover:border-sky-400 shadow-sm'
