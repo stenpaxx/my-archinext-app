@@ -1,4 +1,5 @@
 import { getSupabase } from './supabase';
+import { useStore } from './store';
 import type { Commessa, Vano, VoceComputo } from './types';
 
 const isUuid = (val: string) =>
@@ -86,30 +87,55 @@ export async function sincronizzaCommessaSuSupabase(
     throw new Error('Effettua il login per sincronizzare su Cloud');
   }
 
-  const safeCommessaId = isUuid(c.id) ? c.id : crypto.randomUUID();
+  let safeCommessaId = c.id;
+  if (!isUuid(c.id)) {
+    safeCommessaId = crypto.randomUUID();
+    useStore.setState((prev) => ({
+      commesse: prev.commesse.map((item) =>
+        item.id === c.id ? { ...item, id: safeCommessaId } : item
+      ),
+      attivaId: prev.attivaId === c.id ? safeCommessaId : prev.attivaId,
+      vani: {
+        ...prev.vani,
+        [safeCommessaId]: prev.vani[c.id] ?? vaniCommessa,
+      },
+      voci: {
+        ...prev.voci,
+        [safeCommessaId]: prev.voci[c.id] ?? vociCommessa,
+      },
+    }));
+  }
 
-  const { error: errComm } = await sb.from('commesse').upsert({
-    id: safeCommessaId,
-    user_id: user.id,
-    codice_commessa: c.codice,
-    titolo: c.titolo,
-    indirizzo: c.indirizzo,
-    municipio: c.municipio,
-    dati_catastali: {
-      foglio: c.foglio,
-      particella: c.particella,
-      subalterno: c.subalterno,
-      categoria: c.categoriaCatastale,
-      rendita: c.rendita,
+  const { error: errComm } = await sb.from('commesse').upsert(
+    {
+      id: safeCommessaId,
+      user_id: user.id,
+      codice_commessa: c.codice,
+      titolo: c.titolo,
+      indirizzo: c.indirizzo,
+      municipio: c.municipio,
+      dati_catastali: {
+        foglio: c.foglio,
+        particella: c.particella,
+        subalterno: c.subalterno,
+        categoria: c.categoriaCatastale,
+        rendita: c.rendita,
+      },
+      tipologia_intervento: c.tipologia,
+      tessuto_prg: c.tessutoPRG,
+      carta_qualita: c.cartaQualita,
+      vincoli_note: c.vincoloSoprintendenza ? 'Vincolo D.Lgs 42/2004' : '',
     },
-    tipologia_intervento: c.tipologia,
-    tessuto_prg: c.tessutoPRG,
-    carta_qualita: c.cartaQualita,
-    vincoli_note: c.vincoloSoprintendenza ? 'Vincolo D.Lgs 42/2004' : '',
-  });
-  if (errComm) throw errComm;
+    { onConflict: 'id' }
+  );
+  if (errComm) throw new Error(`Commessa: ${errComm.message}`);
 
-  await sb.from('verifiche_rai').delete().eq('commessa_id', safeCommessaId);
+  const { error: delRaiErr } = await sb
+    .from('verifiche_rai')
+    .delete()
+    .eq('commessa_id', safeCommessaId);
+  if (delRaiErr) throw new Error(`Pulizia RAI: ${delRaiErr.message}`);
+
   if (vaniCommessa.length > 0) {
     const { error: errRai } = await sb.from('verifiche_rai').insert(
       vaniCommessa.map((v) => ({
@@ -123,10 +149,15 @@ export async function sincronizzaCommessaSuSupabase(
         note_tecniche: v.vmc ? 'VMC attiva' : '',
       }))
     );
-    if (errRai) throw errRai;
+    if (errRai) throw new Error(`Vani RAI: ${errRai.message}`);
   }
 
-  await sb.from('voci_computo').delete().eq('commessa_id', safeCommessaId);
+  const { error: delVociErr } = await sb
+    .from('voci_computo')
+    .delete()
+    .eq('commessa_id', safeCommessaId);
+  if (delVociErr) throw new Error(`Pulizia computo: ${delVociErr.message}`);
+
   if (vociCommessa.length > 0) {
     const { error: errVoci } = await sb.from('voci_computo').insert(
       vociCommessa.map((vc, idx) => ({
@@ -142,6 +173,6 @@ export async function sincronizzaCommessaSuSupabase(
         is_sicurezza_non_ribassabile: vc.oneriSicurezza,
       }))
     );
-    if (errVoci) throw errVoci;
+    if (errVoci) throw new Error(`Voci computo: ${errVoci.message}`);
   }
 }
