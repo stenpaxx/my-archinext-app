@@ -33,7 +33,13 @@ function App() {
   const voci = useStore((s) => (commessa ? s.voci[commessa.id] ?? [] : []));
   const caricaCataloghi = useStore((s) => s.caricaCataloghi);
 
-  const isFirstRenderAfterHydration = useRef(true);
+  const skipNextAutoSaveRef = useRef(true);
+  const isSavingRef = useRef(false);
+  const latestPayloadRef = useRef({ commessa, vani, voci, user });
+
+  useEffect(() => {
+    latestPayloadRef.current = { commessa, vani, voci, user };
+  }, [commessa, vani, voci, user]);
 
   const openLegal = (tab: LegalTab) => {
     setLegalTab(tab);
@@ -41,6 +47,7 @@ function App() {
   };
 
   const loadUserCloudData = useCallback(async () => {
+    skipNextAutoSaveRef.current = true;
     try {
       const cloudData = await caricaDaSupabase();
       if (cloudData && cloudData.commesse.length > 0) {
@@ -68,8 +75,9 @@ function App() {
     }
 
     sb.auth.getUser().then(({ data }) => {
-      setUser(data.user ?? null);
-      if (data.user) {
+      const currentUser = data.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
         loadUserCloudData();
       } else {
         setIsHydrated(true);
@@ -93,29 +101,37 @@ function App() {
   }, [caricaCataloghi, loadUserCloudData]);
 
   const handleSyncCloud = useCallback(async () => {
-    if (!commessa) return;
-    if (!user) {
+    const { commessa: currCommessa, vani: currVani, voci: currVoci, user: currUser } = latestPayloadRef.current;
+    if (!currCommessa) return;
+    if (!currUser) {
       setAuthOpen(true);
       return;
     }
+    if (isSavingRef.current) return;
+
+    isSavingRef.current = true;
+    skipNextAutoSaveRef.current = true;
     setSyncStatus('saving');
     setSyncMsg('Auto-salvataggio...');
+
     try {
-      await sincronizzaCommessaSuSupabase(commessa, vani, voci);
+      await sincronizzaCommessaSuSupabase(currCommessa, currVani, currVoci);
       const ora = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
       setSyncStatus('saved');
       setSyncMsg(`Salvato (${ora})`);
     } catch (err: unknown) {
       setSyncStatus('error');
       setSyncMsg(err instanceof Error ? err.message : 'Errore sincronizzazione');
+    } finally {
+      isSavingRef.current = false;
     }
-  }, [commessa, vani, voci, user]);
+  }, []);
 
   useEffect(() => {
     if (!isHydrated || !commessa || !user) return;
 
-    if (isFirstRenderAfterHydration.current) {
-      isFirstRenderAfterHydration.current = false;
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
       return;
     }
 
@@ -127,7 +143,7 @@ function App() {
     }, 2000);
 
     return () => window.clearTimeout(timer);
-  }, [isHydrated, commessa, vani, voci, user, handleSyncCloud]);
+  }, [isHydrated, commessa?.id, commessa, vani, voci, user?.id, handleSyncCloud]);
 
   const handleLogout = async () => {
     const sb = getSupabase();
@@ -277,7 +293,7 @@ function App() {
         open={authOpen}
         onClose={() => setAuthOpen(false)}
         onSuccess={() => {
-          isFirstRenderAfterHydration.current = false;
+          skipNextAutoSaveRef.current = false;
           handleSyncCloud();
         }}
       />
