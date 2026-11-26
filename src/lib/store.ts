@@ -11,14 +11,25 @@ export interface DocumentoCommessa {
   dataUrl?: string;
 }
 
+export interface VoceComputo {
+  id: string;
+  codice?: string;
+  descrizione: string;
+  unitaMisura?: string;
+  quantita?: number;
+  prezzoUnitario?: number;
+  importo?: number;
+}
+
 export const EMPTY_VANI: Vano[] = [];
+export const EMPTY_VOCI: VoceComputo[] = [];
 
 const COMMESSE_INIZIALI: Commessa[] = [
   {
     id: 'comm-2026-014',
     codice: '2026-014',
-    titolo: 'Ristrutturazione Appartamento Via del Boschetto',
-    indirizzo: 'Via del Boschetto, 00184 Roma RM',
+    titolo: 'Ristrutturazione Appartamento Via del Boschetto 72 - Rione Monti, Roma',
+    indirizzo: 'Via del Boschetto, 72, 00184 Roma RM',
     municipio: 'Municipio I',
     foglio: '482',
     particella: '118',
@@ -26,16 +37,29 @@ const COMMESSE_INIZIALI: Commessa[] = [
     categoriaCatastale: 'A/2',
     rendita: '€ 1.480,00',
     tipologia: 'Manutenzione Straordinaria CILA',
-    tessutoPRG: 'T2',
+    tessutoPRG: 'T1',
     cartaQualita: true,
     vincoloSoprintendenza: false,
   },
 ];
 
+function componiTitoloAutomatico(indirizzo: string, tipologia: string, codice: string): string {
+  const indirizzoPulito = indirizzo.trim();
+  if (!indirizzoPulito || indirizzoPulito === 'Roma RM') {
+    return `Ristrutturazione Appartamento — Commessa ${codice}`;
+  }
+  const viaSenzaCap = indirizzoPulito.replace(/,?\s*\d{5}\s+Roma\s+RM$/i, '').trim();
+  const prefisso = tipologia.toLowerCase().includes('frazion')
+    ? 'Frazionamento Appartamento'
+    : 'Ristrutturazione Appartamento';
+  return `${prefisso} ${viaSenzaCap || indirizzoPulito}`;
+}
+
 interface ArchinextStore {
   commesse: Commessa[];
   attivaId: string;
   vani: Record<string, Vano[]>;
+  voci: Record<string, VoceComputo[]>;
   steps: Record<string, boolean[]>;
   documenti: Record<string, DocumentoCommessa[]>;
   activeStepIndex: number;
@@ -47,8 +71,10 @@ interface ArchinextStore {
   eliminaCommessa: (id: string) => void;
   toggleStep: (commessaId: string, stepIndex: number) => void;
   setVani: (commessaId: string, vani: Vano[]) => void;
+  setVoci: (commessaId: string, voci: VoceComputo[]) => void;
   aggiungiDocumenti: (commessaId: string, docs: DocumentoCommessa[]) => void;
   rimuoviDocumento: (commessaId: string, docId: string) => void;
+  caricaCataloghi: () => Promise<void> | void;
 }
 
 export const useStore = create<ArchinextStore>()(
@@ -57,6 +83,9 @@ export const useStore = create<ArchinextStore>()(
       commesse: COMMESSE_INIZIALI,
       attivaId: COMMESSE_INIZIALI[0].id,
       vani: {
+        'comm-2026-014': [],
+      },
+      voci: {
         'comm-2026-014': [],
       },
       steps: {
@@ -72,30 +101,42 @@ export const useStore = create<ArchinextStore>()(
       setActiveStepIndex: (index) => set({ activeStepIndex: index }),
 
       creaCommessa: (parziale) => {
-        const count = get().commesse.length + 15;
-        const codice = `2026-${String(count).padStart(3, '0')}`;
+        const currentCommesse = get().commesse;
+        const maxNum = currentCommesse.reduce((acc, c) => {
+          const match = c.codice?.match(/(\d+)$/);
+          const num = match ? parseInt(match[1], 10) : 0;
+          return Math.max(acc, num);
+        }, 14);
+        const codice = `2026-${String(maxNum + 1).padStart(3, '0')}`;
         const id = `comm-${Date.now()}`;
+        const indirizzo = parziale?.indirizzo?.trim() || 'Via del Boschetto, 72, 00184 Roma RM';
+        const tipologia = parziale?.tipologia ?? 'Manutenzione Straordinaria CILA';
+        const titolo =
+          parziale?.titolo?.trim() || componiTitoloAutomatico(indirizzo, tipologia, codice);
+
         const nuova: Commessa = {
           id,
           codice,
-          titolo: parziale?.titolo ?? `Nuova Commessa ${codice}`,
-          indirizzo: parziale?.indirizzo ?? 'Roma RM',
+          titolo,
+          indirizzo,
           municipio: parziale?.municipio ?? 'Municipio I',
           foglio: parziale?.foglio ?? '',
           particella: parziale?.particella ?? '',
           subalterno: parziale?.subalterno ?? '',
           categoriaCatastale: parziale?.categoriaCatastale ?? 'A/2',
           rendita: parziale?.rendita ?? '',
-          tipologia: parziale?.tipologia ?? 'Manutenzione Straordinaria CILA',
-          tessutoPRG: parziale?.tessutoPRG ?? 'T2',
-          cartaQualita: parziale?.cartaQualita ?? false,
+          tipologia,
+          tessutoPRG: parziale?.tessutoPRG ?? 'T1',
+          cartaQualita: parziale?.cartaQualita ?? true,
           vincoloSoprintendenza: parziale?.vincoloSoprintendenza ?? false,
         };
 
         set((s) => ({
           commesse: [nuova, ...s.commesse],
           attivaId: id,
+          activeStepIndex: 0,
           vani: { ...s.vani, [id]: [] },
+          voci: { ...s.voci, [id]: [] },
           steps: { ...s.steps, [id]: [false, false, false, false, false, false, false] },
           documenti: { ...s.documenti, [id]: [] },
         }));
@@ -105,7 +146,25 @@ export const useStore = create<ArchinextStore>()(
 
       aggiornaCommessa: (id, patch) =>
         set((s) => ({
-          commesse: s.commesse.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+          commesse: s.commesse.map((c) => {
+            if (c.id !== id) return c;
+            const aggiornata = { ...c, ...patch };
+            const staCambiandoIndirizzo =
+              typeof patch.indirizzo === 'string' && patch.indirizzo !== c.indirizzo;
+            const nonHaForzatoTitolo = patch.titolo === undefined;
+            const titoloEraAutomatico =
+              c.titolo === componiTitoloAutomatico(c.indirizzo, c.tipologia, c.codice) ||
+              c.titolo.startsWith('Nuova Commessa');
+
+            if (staCambiandoIndirizzo && nonHaForzatoTitolo && titoloEraAutomatico) {
+              aggiornata.titolo = componiTitoloAutomatico(
+                aggiornata.indirizzo,
+                aggiornata.tipologia,
+                aggiornata.codice
+              );
+            }
+            return aggiornata;
+          }),
         })),
 
       eliminaCommessa: (id) =>
@@ -139,6 +198,14 @@ export const useStore = create<ArchinextStore>()(
           },
         })),
 
+      setVoci: (commessaId, voci) =>
+        set((s) => ({
+          voci: {
+            ...s.voci,
+            [commessaId]: voci,
+          },
+        })),
+
       aggiungiDocumenti: (commessaId, docs) =>
         set((s) => ({
           documenti: {
@@ -154,9 +221,19 @@ export const useStore = create<ArchinextStore>()(
             [commessaId]: (s.documenti[commessaId] ?? []).filter((d) => d.id !== docId),
           },
         })),
+
+      caricaCataloghi: async () => {
+        // Hook di inizializzazione cataloghi all'avvio dell'app
+      },
     }),
     {
       name: 'my-archinext-roma-storage',
     }
   )
 );
+
+export function useAttiva(): Commessa | undefined {
+  const commesse = useStore((s) => s.commesse);
+  const attivaId = useStore((s) => s.attivaId);
+  return commesse.find((c) => c.id === attivaId) ?? commesse[0];
+}
