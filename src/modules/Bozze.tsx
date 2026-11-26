@@ -1,197 +1,362 @@
 import { useMemo, useState } from 'react';
-import { CopyButton } from '@/components/CopyButton';
-import { Download } from 'lucide-react';
-import { useStore, useAttiva } from '@/lib/store';
-import { TESSUTI_PRG } from '@/lib/types';
-import type { Commessa, Vano } from '@/lib/types';
-
-const dataIt = (d = new Date()) => d.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
-
-function auditRAI(vani: Vano[]): string {
-  if (vani.length === 0) return '  [Audit RAI non ancora eseguito nel modulo 2]';
-  return vani.map((v) => {
-    const rai = v.superficie > 0 ? v.superfFinestrata / v.superficie : 0;
-    const esito = v.superficie > 0 ? (rai >= 0.125 ? 'CONFORME' : 'NON CONFORME') : 'N/D';
-    return `  - ${v.nome || '(vano)'} | ${v.destinazione} | Sup. ${v.superficie.toFixed(2).replace('.', ',')} mq | Finestr. aprib. ${v.superfFinestrata.toFixed(2).replace('.', ',')} mq | RAI ${rai.toFixed(3).replace('.', ',')} ${esito}${!v.vmc && v.destinazione === 'Bagno' && v.superfFinestrata <= 0 ? ' | bagno cieco: previsto VMC' : ''}`;
-  }).join('\n');
-}
-
-function relazioneSUET(c: Commessa, vani: Vano[]): string {
-  const protocollo = c.tipologia.includes('SCIA') ? 'SCIA' : 'CILA';
-  const tessuto = TESSUTI_PRG.find((t) => t.sigla === c.tessutoPRG);
-  const raiTuttiConformi = vani.length > 0 && vani.every((v) => v.superficie <= 0 || v.superfFinestrata / v.superficie >= 0.125 || v.destinazione === 'Bagno' || v.destinazione === 'Corridoio');
-
-  return `RELAZIONE TECNICA ${protocollo === 'SCIA' ? 'DI ASSEVERAZIONE A CORREDO DELLA SCIA' : 'ASSEVERATA A CORREDO DELLA CILA'}
-(ex art. 5 DPR 380/2001 – art. 6 D.P.R. 31/2017 – DM 02/03/2017 n. 37 – SUET Roma Capitale)
-
-Committa/e: [dati committente]
-Tecnico incaricato: Arch./Ing. [nome e cognome], iscritto/a all'Ordine degli Architetti PPC di Roma n. [__]
-Oggetto: ${c.titolo}
-Ubicazione immobile: ${c.indirizzo || '[indirizzo]'} — ${c.municipio || '[municipio]'}, Roma Capitale
-Dati catastali: Fg. ${c.foglio || '__'} — Part. ${c.particella || '__'} — Sub. ${c.subalterno || '__'} — Cat. ${c.categoriaCatastale} — Rendita ${c.rendita || '[__]'}
-Tipologia intervento: ${c.tipologia}
-Tessuto urbanistico PRG: ${c.tessutoPRG}${tessuto ? ` (${tessuto.nome})` : ''}
-
-1. QUADRO URBANISTICO E VINCOLISTICO
-Il sottoscritto ha verificato la conformità dell'intervento alle NTA del PRG di Roma Capitale. L'immobile è ubicato in ${tessuto ? `tessuto "${tessuto.nome}" (${tessuto.sigla})` : c.tessutoPRG}; gli interventi ammessi nel tessuto includono: ${tessuto ? tessuto.ammessi.join(', ') : '—'}.${c.cartaQualita ? '\nL\'intervento è inserito negli indirizzi della Carta per la Qualità di Roma Capitale: sono stati adottati requisiti di qualità architettonica, ambientale e di relazione con il contesto, ai fini della valutazione di quality shaping.' : ''}${c.vincoloSoprintendenza ? '\nL\'immobile è assoggettato a vincolo ex D.Lgs 42/2004 (Codice dei beni culturali e del paesaggio): si provvederà all\'acquisizione dell\'autorizzazione paesaggistica in procedimento contestato da parte della competente Soprintendenza Speciale di Roma.' : ''}
-
-2. VERIFICA DEI RAPPORTI AEROILLUMINANTI (DM 05/07/1975)
-Ai sensi del DM 05/07/1975 e del Regolamento Edilizio di Roma Capitale, si riporta l'audit dei vani con calcolo del rapporto aeroilluminante (RAI = superficie finestrata apribile / superficie calpestabile, minimo 1/8):
-
-${auditRAI(vani)}
-
-${raiTuttiConformi ? 'Dall\'audit risultano soddisfatti i requisiti di RAI ≥ 1/8 e le superfici minime per tutti gli ambienti abitabili.' : 'ATTENZIONE: uno o più vani risultano NON CONFORMI alla soglia RAI ≥ 1/8 o alle superfici minime del DM 05/07/1975: si rimanda all\'audit di dettaglio e alle prescrizioni progettuali per la messa a norma.'}
-
-3. VERIFICA DISTRIBUTIVA E IMPIANTISTICA
-La distribuzione dei vani è conforme ai requisiti del DM 05/07/1975; l'audit delle varianti distributive ha considerato il tracciato delle colonne di scarico esistenti. Gli impianti elettrico (CEI 64-8 — Livello di progettazione appropriato allo scenario residenziale) e idrico-sanitario sono dimensionati secondo le norme tecniche di riferimento (D.M. 37/2008).
-
-4. CONFORMITÀ CATASTALE
-L'intervento è verificato ai fini della conformità catastale ex art. 6 e 7 della Legge 652/1996; eventuali variazioni saranno documentate con aggiornamento del catastale Edifici Urbani (planimetrie frazione, atlante geografico e cascata documentale).
-
-5. ONORABILE IMPEGNO
-Il sottoscritto Tecnico, presa visione della documentazione prodotta, dichiarata sotto la propria responsabilità la verità delle cose esposte e la conformità dell'intervento alla normativa vigente (PRG di Roma Capitale, Regolamento Edilizio, DM 05/07/1975), assevera quanto sopra in merito al procedimento ${protocollo} di cui alla presente.
-
-Luogo e data: Roma, ${dataIt()}
-Il Tecnico incaricato
-_____________________________`;
-}
-
-function capitolatoFIR(c: Commessa): string {
-  return `CLAUSOLA CONTRATTUALE SPECIALE D'APPALTO — GESTIONE MACERIE E RIFIUTI
-(Committente / Appaltatore — ${c.titolo}, ${c.indirizzo || '[indirizzo]'}, Roma)
-
-ART. 1 — OGGETTO
-L'Appaltatore si obbliga a gestire integralmente i rifiuti da demolizione e costruzione (capitoli CER 17) derivanti dai lavori commissati con il presente contratto, in ottemperanza al D.Lgs. 152/2006 (Parte IV) e al D.M. 185/2007.
-
-ART. 2 — CARICO, SCARICO E TRASPORTO
-L'Appaltatore provvede al carico, trasporto e conferimento dei rifiuti presso impianti autorizzati, con mezzi idonei e coperti, escludendo dispersione o abbandono lungo il tragitto. L'Appaltatore è esclusivamente responsabile di ogni sanzione amministrativa e penale a riguardo.
-
-ART. 3 — FORMULARO IDENTIFICAZIONE RIFIUTI (FIR)
-Per ogni operazione di trasporto, l'Appaltatore provvede alla compilazione e sottoscrizione (anche digitale) del Formulario di Identificazione Rifiuti (FIR) ex art. 193 D.Lgs. 152/2006, dandone comunicazione al Committente e al Direttore dei Lavori entro 48 ore.
-
-ART. 4 — TRACCIABILITÀ E DOCUMENTI
-L'Appaltatore trasmette al Committente copia di: (a) registro di carico/scarico ex art. 190 D.Lgs. 152/2006; (b) certificato di conferimento dell'impianto di destinazione; (c) dichiarazione di fine lavorazione / reciproca ex art. 185 D.Lgs. 152/2006.
-
-ART. 5 — VERBALE DI CONSEGNA E RITENUTE
-Prima di ogni ritenuta o liquidazione, l'Appaltatore deposita la documentazione integrale di tracciabilità dei rifiuti. In caso di omissione, il Committente trattiene un importo pari al 10% di ogni stato di avanzamento lavori fino alla presentazione.
-
-Letto, confermato e sottoscritto per accettazione.
-
-Roma, ${dataIt()}          Il Committente          L'Appaltatore`;
-}
-
-function informativaAI(c: Commessa): string {
-  return `INFORMATIVA AL COMMITTENTE SULL'UTILIZZO DI SISTEMI DI INTELLIGENZA ARTIFICIALE
-(Ai sensi dell'art. 13 del Regolamento UE 2016/679 e dell'art. 13 della Legge 132/2025)
-
-Gentile Committente,
-in relazione all'incarico professionale riferito all'immobile sito in ${c.indirizzo || '[indirizzo]'} (Roma), ${c.titolo}, il sottoscritto Tecnico incaricato La informa che, nell'ambito dell'elaborazione degli studi, documenti tecnici e materiali grafici relativi all'incarico, fa ausilio di strumenti software dotati di sistemi di Intelligenza Artificiale generativa.
-
-1. NATURA DEGLI STRUMENTI UTILIZZATI
-Gli strumenti di IA impiegati sono utilizzati in qualità di supporto tecnologico ausiliario e comprendono: sistemi di generazione e revisione di testi tecnici, strumenti di calcolo automatico, software di automazione grafica CAD e sistemi di revisione documentale.
-
-2. RESPONSABILITÀ PROFESSIONALE
-Resta fermo che ogni prodotto, elaborato, relazione, computo e documento tecnico emesso nell'ambito dell'incarico è verificato, validato e sottoscritto dal Tecnico incaricato, che ne assume la piena e integrale responsabilità professionale ai sensi delle norme di disciplina dell'Ordine di appartenenza. I sistemi di IA non sostituiscono in alcun modo la vigilanza, il controllo e la firma del Professionista.
-
-3. TRATTAMENTO DEI DATI
-Nell'utilizzo di tali strumenti, il Professionista si astiene dal conferire dati personali identificativi del Committente e di terzi ove non necessari, adottando le opportune misure di salvaguardia ai sensi del Regolamento UE 2016/679 (GDPR).
-
-4. DIRITTI DEL COMMITTENTE
-Il Committente ha diritto di ottenere informazioni sugli strumenti di IA impiegati e di richiedere che determinate elaborazioni siano prodotte senza l'ausilio di tali sistemi, con eventuale ripercussione su tempi e costi dell'incarico.
-
-5. ACCETTAZIONE
-La presente informativa è consegnata ai sensi dell'art. 13 della Legge 132/2025; si invita il Committente a prenderne visione e a sottoscriverne l'accettazione.
-
-Roma, ${dataIt()}
-Il Tecnico incaricato
-_____________________________`;
-}
-
-type DocId = 'relazione' | 'capitolato' | 'ai';
-
-const TABS: { id: DocId; label: string; file: string }[] = [
-  { id: 'relazione', label: 'Relazione Tecnica Asseverata SUET', file: 'Relazione_Asseverata_SUET' },
-  { id: 'capitolato', label: 'Capitolato & FIR', file: 'Capitolato_FIR' },
-  { id: 'ai', label: 'Informativa AI (L. 132/2025)', file: 'Informativa_AI_L132_2025' },
-];
+import { FileCheck2, Copy, Check, Download } from 'lucide-react';
+import { useStore, useAttiva, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
+import type { DettagliProcedimento } from '@/modules/DueDiligence';
 
 export function Bozze() {
   const { commessa } = useAttiva();
-  const vani = useStore((s) => (commessa ? s.vani[commessa.id] ?? [] : []));
-  const [tab, setTab] = useState<DocId>('relazione');
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? EMPTY_VANI : EMPTY_VANI));
+  const voci = useStore((s) => (commessa ? s.voci?.[commessa.id] ?? EMPTY_VOCI : EMPTY_VOCI));
 
-  const testo = useMemo(() => {
-    if (!commessa) return '';
-    if (tab === 'relazione') return relazioneSUET(commessa, vani);
-    if (tab === 'capitolato') return capitolatoFIR(commessa);
-    return informativaAI(commessa);
-  }, [commessa, vani, tab]);
+  const [tecnicoNome, setTecnicoNome] = useState(
+    'Arch. Stefano — Ordine degli Architetti PPC di Roma e Provincia n. 20061'
+  );
+  const [committenteNome, setCommittenteNome] = useState('');
+  const [copied, setCopied] = useState(false);
 
-  if (!commessa) return <div className="p-10 text-slate-500">Nessuna commessa attiva.</div>;
+  const testoRelazione = useMemo(() => {
+    const mqTotali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
+    const mqFinestratiTotali = vani.reduce(
+      (acc, v) => acc + (Number(v.superfFinestrata) || 0),
+      0
+    );
+    const lavoriNetti = voci
+      .filter((v) => !v.oneriSicurezza)
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+    const oneriSicurezza = voci
+      .filter((v) => Boolean(v.oneriSicurezza))
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+    const totaleLavori = lavoriNetti + oneriSicurezza;
 
-  const activeTab = TABS.find((t) => t.id === tab)!;
+    const elencoVani =
+      vani.length > 0
+        ? vani
+            .map((v) => {
+              const sup = Number(v.superficie) || 0;
+              const fin = Number(v.superfFinestrata) || 0;
+              const hMedia = Number(v.altezzaMedia) || 0;
+              const rai = sup > 0 ? fin / sup : 0;
+              const esitoRai =
+                sup <= 0
+                  ? 'sup. da definire'
+                  : rai >= 0.125
+                    ? `RAI ${rai.toFixed(3)} (>= 1/8 conforme)`
+                    : v.vmc
+                      ? `RAI ${rai.toFixed(3)} compensato con VMC`
+                      : `RAI ${rai.toFixed(3)} (< 1/8 da verificare)`;
+              return `  * ${v.nome || 'Vano'} [${v.destinazione || 'Destinazione da indicare'}]: Sup. ${sup.toFixed(
+                2
+              )} mq | Sup. finestrata apribile ${fin.toFixed(2)} mq | H media ${hMedia.toFixed(
+                2
+              )} m | ${esitoRai}`;
+            })
+            .join('\n')
+        : '  * Vani da censire e riscontrare in fase di rilievo esecutivo e restituzione grafica.';
 
-  const scaricaTxt = () => {
-    const blob = new Blob([testo], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${activeTab.file}_${commessa.codice}.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const codiceCommessa = commessa?.codice ?? '2026-014';
+    const titoloCommessa = commessa?.titolo ?? 'Intervento Edilizio in Roma Capitale';
+    const indirizzoCommessa = commessa?.indirizzo ?? 'Via del Boschetto, 72, 00184 Roma RM';
+    const municipioCommessa = commessa?.municipio ?? 'Municipio I';
+    const foglio = commessa?.foglio || '—';
+    const particella = commessa?.particella || '—';
+    const subalterno = commessa?.subalterno || '—';
+    const categoriaCatastale = commessa?.categoriaCatastale || 'A/2';
+    const tipologiaTitolo = commessa?.tipologia ?? 'Manutenzione Straordinaria CILA';
+    const tessutoPRG = commessa?.tessutoPRG ?? 'T1';
+    const haCartaQualita = Boolean(commessa?.cartaQualita);
+    const haVincolo = Boolean(commessa?.vincoloSoprintendenza);
+
+    const proc =
+      ((commessa as unknown as { dettagliProcedimento?: DettagliProcedimento })
+        ?.dettagliProcedimento ?? {}) as DettagliProcedimento;
+
+    const cartaQualitaLabel = haCartaQualita
+      ? `SI (${proc.ambitoCartaQualita?.trim() || 'ambito Carta per la Qualità PRG'})`
+      : 'NO';
+
+    const vincoloSoprintendenza = haVincolo
+      ? `SI (${
+          proc.tipoTutelaBeniCulturali?.trim() || 'immobile/contesto soggetto a tutela D.Lgs. 42/2004'
+        } — Atto/Istanza: ${
+          proc.attoSoprintendenza?.trim() || 'da acquisire/riscontrare presso Soprintendenza'
+        })`
+      : 'NO (ordinario, fermo restando l’accertamento puntuale dei vincoli sovraordinati)';
+
+    const impresa =
+      proc.impresaEsecutrice?.trim() ||
+      'Da indicare / verificare prima dell’inizio lavori (D.Lgs. 81/2008 e DURC)';
+
+    const coordinatore =
+      proc.coordinatoreSicurezza?.trim() ||
+      'Da verificare ai sensi del D.Lgs. 81/2008 in relazione alle imprese presenti in cantiere';
+
+    const titoloLegittimante =
+      proc.titoloLegittimante?.trim() ||
+      'Titoli edilizi legittimanti, provvedimenti d’uso e documentazione probatoria acquisita';
+
+    const aggiornamentoCatastale =
+      proc.aggiornamentoCatastale?.trim() ||
+      'Da curare presso l’Agenzia delle Entrate — Territorio ai sensi dell’art. 19, comma 14, L. 122/2010 ove pertinente';
+
+    const testoCombinato = `${tipologiaTitolo} ${titoloCommessa}`.toLowerCase();
+    const isFrazionamento = testoCombinato.includes('frazionamento');
+    const isCilaOrLibera =
+      !isFrazionamento &&
+      (tipologiaTitolo.includes('CILA') || tipologiaTitolo.includes('Libera'));
+    const isScia = !isFrazionamento && tipologiaTitolo.includes('SCIA');
+    const isEdificazione =
+      !isFrazionamento &&
+      (tipologiaTitolo.includes('Permesso di Costruire') ||
+        tipologiaTitolo.includes('Nuova Edificazione'));
+
+    const sezioneProcedimentoSpecifica = isFrazionamento
+      ? `QUADRO PROCEDIMENTALE SPECIFICO — FRAZIONAMENTO (${tipologiaTitolo.toUpperCase()})
+  * Unità immobiliari risultanti (U.I.U.): ${
+    proc.unitaRisultanti?.trim() ||
+    'Suddivisione in unità immobiliari distinte come da elaborati di progetto e planimetrie'
+  }
+  * Requisiti igienico-sanitari / RAI / VMC / impianti per unità: ${
+    proc.requisitiUnitaFrazionate?.trim() ||
+    'Verifica RAI >= 1/8 o VMC, superfici/altezze minime D.M. 05/07/1975 e autonomia impiantistica D.M. 37/08 per ciascuna unità'
+  }
+  * Contributo di costruzione / monetizzazione: ${
+    proc.oneriFrazionamento?.trim() ||
+    'Da verificare ai sensi del D.P.R. 380/2001, del R.E.C. e della normativa regionale del Lazio'
+  }
+  * Impresa esecutrice: ${impresa}`
+      : isEdificazione
+        ? `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
+  * Parametri urbanistici di progetto (SUL / Volume / Indice): ${
+    proc.sulVolumeProgetto?.trim() || 'Come da elaborati plano-volumetrici e verifiche N.T.A.'
+  }
+  * Contributo di costruzione (oneri urbanizzazione / costo costruzione): ${
+    proc.contributoCostruzione?.trim() || 'Da computare / versare secondo tariffe Roma Capitale'
+  }
+  * Invarianza idraulica e permeabilità dei suoli (DAC 90/2026 & R.E.C.): ${
+    proc.invarianzaIdraulica?.trim() ||
+    'Verifica superfici drenanti/permeabili e laminazione meteorica'
+  }
+  * Impresa esecutrice: ${impresa}`
+        : isScia
+          ? `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
+  * Profilo strutturale / sismico: ${
+    proc.opereStrutturali?.trim() ||
+    'Verifiche e depositi strutturali ex D.P.R. 380/2001 e L.R. Lazio ove dovuti'
+  }
+  * Sagoma, prospetti e destinazioni d'uso: ${
+    proc.variazioneSagomaProspetti?.trim() ||
+    'Coerenza con N.T.A. del P.R.G. e pareri/nulla osta acquisiti'
+  }
+  * Impresa esecutrice: ${impresa}`
+          : `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
+  * Esclusione opere strutturali / prospetti: ${
+    proc.opereStrutturali?.trim() ||
+    'Nessuna opera su parti strutturali portanti o prospetti esterni'
+  }
+  * Impresa esecutrice: ${impresa}`;
+
+    const sezioneCartaQualita = haCartaQualita
+      ? `\nCARTA PER LA QUALITÀ — P.R.G. ROMA CAPITALE
+  * Ambito / elemento: ${
+    proc.ambitoCartaQualita?.trim() || 'Ambito soggetto a Carta per la Qualità del P.R.G.'
+  }
+  * Prescrizioni e verifiche ambientali/tipologiche: ${
+    proc.prescrizioniCartaQualita?.trim() ||
+    'Coerenza con materiali, caratteri tipologici, permeabilità dei suoli e invarianza idraulica (DAC 90/2026 & R.E.C.)'
+  }\n`
+      : '';
+
+    const sezioneTutelaSoprintendenza = haVincolo
+      ? `\nVINCOLO SOPRINTENDENZA — D.LGS. 42/2004
+  * Tipologia di tutela: ${
+    proc.tipoTutelaBeniCulturali?.trim() || 'Tutela beni culturali / paesaggistici ex D.Lgs. 42/2004'
+  }
+  * Estremi atto / parere / istanza: ${
+    proc.attoSoprintendenza?.trim() || 'Da richiamare con estremi di protocollo/autorizzazione'
+  }
+  * Prescrizioni e condizioni operative: ${
+    proc.prescrizioniTutela?.trim() ||
+    'Rispetto integrale delle prescrizioni impartite dalla Soprintendenza in fase esecutiva'
+  }\n`
+      : '';
+
+    return `RELAZIONE TECNICA ASSEVERATA (R.T.A.)
+PORTALE SUET — ROMA CAPITALE
+================================================================================
+IDENTIFICATIVO PRATICA / COMMESSA: ${codiceCommessa}
+OGGETTO DELL'INTERVENTO: ${titoloCommessa}
+UBICAZIONE IMMOBILE: ${indirizzoCommessa} — ${municipioCommessa}, Roma Capitale
+DATI CATASTALI (C.F. / C.T.): Foglio ${foglio}, Particella ${particella}, Subalterno ${subalterno} — Categoria ${categoriaCatastale}
+TITOLO ABILITATIVO / PROCEDIMENTO: ${tipologiaTitolo}
+INQUADRAMENTO URBANISTICO (P.R.G. ROMA): ${tessutoPRG}
+CARTA PER LA QUALITÀ: ${cartaQualitaLabel}
+VINCOLO PAESAGGISTICO / STORICO-ARTISTICO (D.LGS. 42/2004): ${vincoloSoprintendenza}
+COMMITTENTE / AVENTE TITOLO: ${committenteNome.trim() || 'Come da procura e dichiarazioni sostitutive allegate al fascicolo SUET'}
+TECNICO PROGETTISTA E ASSEVERANTE: ${tecnicoNome.trim() || 'Tecnico abilitato iscritto al relativo Ordine/Collegio'}
+
+--------------------------------------------------------------------------------
+1. INQUADRAMENTO URBANISTICO, STATO LEGITTIMO E COERENZA CON IL P.R.G.
+--------------------------------------------------------------------------------
+L'unità immobiliare oggetto della presente relazione ricade nel territorio di Roma Capitale (${municipioCommessa}), in corrispondenza di ${indirizzoCommessa}, ed è identificata al Catasto Edilizio Urbano al Foglio ${foglio}, Particella ${particella}, Subalterno ${subalterno} (Categoria ${categoriaCatastale}).
+
+In base alle previsioni del Piano Regolatore Generale (P.R.G.) vigente di Roma Capitale e del Regolamento Edilizio di Roma Capitale (R.E.C.), l'area/immobile si colloca in ${tessutoPRG}. L'intervento proposto risulta coerente con la disciplina del tessuto di appartenenza e con le relative Norme Tecniche di Attuazione (N.T.A.), nel rispetto del procedimento "${tipologiaTitolo}".
+
+Ai sensi dell'art. 9-bis del D.P.R. 380/2001 e s.m.i., lo stato legittimo dell'immobile è desunto da: ${titoloLegittimante}, riscontrato con lo stato attuale rilevato. Aggiornamento catastale: ${aggiornamentoCatastale}.
+
+${sezioneProcedimentoSpecifica}
+${sezioneCartaQualita}${sezioneTutelaSoprintendenza}
+--------------------------------------------------------------------------------
+2. DESCRIZIONE DETTAGLIATA DELLE OPERE PROGETTATE
+--------------------------------------------------------------------------------
+L'intervento consiste nelle opere riconducibili al procedimento "${tipologiaTitolo}" così come rappresentate negli elaborati progettuali:
+  * Realizzazione delle lavorazioni edilizie interne e/o esterne coerenti con il titolo abilitativo indicato e con le prescrizioni del P.R.G. e del R.E.C.
+  * Adeguamento, integrazione o rifacimento degli impianti tecnologici (elettrico/dati, idrico-sanitario, scarichi, climatizzazione e ventilazione), eseguiti a regola d'arte da imprese abilitate ai sensi del D.M. 22 gennaio 2008, n. 37, con rilascio delle relative Dichiarazioni di Conformità (Di.Co.) a fine lavori.
+${
+  isCilaOrLibera
+    ? '  * Lavori eseguiti senza alterazione di parti strutturali portanti né modifica delle superfici/volumi urbanistici.'
+    : '  * Esecuzione delle opere nel rispetto delle verifiche tecniche, strutturali, energetiche e ambientali previste dal titolo abilitativo.'
+}
+
+--------------------------------------------------------------------------------
+3. VERIFICHE IGIENICO-SANITARIE, DISTRIBUTIVE E RAPPORTO AEROILLUMINANTE
+--------------------------------------------------------------------------------
+Le lavorazioni sono progettate nel rispetto del D.M. 5 luglio 1975 e delle disposizioni del Regolamento Edilizio di Roma Capitale in materia di superfici minime, altezze nette interne, aeroilluminazione naturale diretta (rapporto aeroilluminante R.A.I. >= 1/8 per i locali di abitazione) e ventilazione meccanica controllata (V.M.C.) per i locali di servizio/bagni ciechi.
+
+Sintesi dei parametri rilevati/progettati (Superficie complessiva censita: ${mqTotali.toFixed(
+      2
+    )} mq | Superficie finestrata apribile complessiva: ${mqFinestratiTotali.toFixed(2)} mq):
+${elencoVani}
+
+--------------------------------------------------------------------------------
+4. QUADRO ECONOMICO DI RIFERIMENTO, SICUREZZA E GESTIONE RIFIUTI
+--------------------------------------------------------------------------------
+Sulla base del computo metrico estimativo redatto con riferimento al Prezzario Regionale del Lazio vigente, l'importo stimato delle opere risulta così articolato:
+  * Importo lavori a misura / a corpo (IVA esclusa): € ${lavoriNetti.toLocaleString('it-IT', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}
+  * Oneri della sicurezza (IVA esclusa): € ${oneriSicurezza.toLocaleString('it-IT', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}
+  * Totale complessivo stimato delle opere (IVA esclusa): € ${totaleLavori.toLocaleString('it-IT', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}
+
+In fase esecutiva saranno osservate le disposizioni del D.Lgs. 9 aprile 2008, n. 81 (inclusa la verifica dell'idoneità tecnico-professionale dell'impresa esecutrice, la notifica preliminare ove dovuta, la redazione del PSC/POS e il ruolo di coordinamento per la sicurezza: ${coordinatore}). I rifiuti e i materiali di risulta saranno conferiti a impianti autorizzati nel rispetto del D.Lgs. 152/2006, conservando i relativi formulari (FIR).
+
+--------------------------------------------------------------------------------
+5. ASSEVERAZIONE DEL TECNICO ABILITATO
+--------------------------------------------------------------------------------
+Il sottoscritto ${
+      tecnicoNome.trim() || 'tecnico abilitato'
+    }, in qualità di tecnico progettista e asseverante, consapevole delle responsabilità penali e amministrative derivanti da dichiarazioni mendaci o false asseverazioni ai sensi degli artt. 359 e 481 del Codice Penale e del D.P.R. 445/2000, ASSEVERA:
+  a) la conformità delle opere da realizzare agli elaborati progettuali allegati e al vigente strumentario urbanistico ed edilizio di Roma Capitale (P.R.G., N.T.A. e R.E.C.);
+  b) il rispetto delle norme igienico-sanitarie (D.M. 05/07/1975), delle norme di sicurezza (D.Lgs. 81/2008) e delle disposizioni in materia di efficienza energetica e sicurezza degli impianti (D.M. 37/2008), per quanto di competenza;
+  c) che l'intervento non comporta violazione di diritti di terzi né pregiudizio alla statica dell'edificio, fermo restando l'obbligo di integrare eventuali ulteriori pareri, nulla osta o atti di assenso qualora in corso d'opera emergano condizioni non rilevabili a priori.
+
+Data: ${new Date().toLocaleDateString('it-IT')}
+Il Tecnico Asseverante
+${tecnicoNome.trim() || 'Tecnico abilitato'}
+`;
+  }, [commessa, vani, voci, tecnicoNome, committenteNome]);
+
+  if (!commessa) {
+    return <div className="p-10 text-zinc-600">Nessuna commessa attiva.</div>;
+  }
+
+  const handleCopy = async () => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(testoRelazione).catch(() => {});
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
-  const scaricaDoc = () => {
-    const html = `<html><head><meta charset="utf-8"></head><body><pre style="font-family:Georgia,serif;white-space:pre-wrap;font-size:11pt;line-height:1.5">${testo.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre></body></html>`;
-    const blob = new Blob([html], { type: 'application/msword' });
+  const handleDownload = () => {
+    const blob = new Blob([testoRelazione], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${activeTab.file}_${commessa.codice}.doc`;
+    a.href = url;
+    a.download = `Relazione_Asseverata_SUET_${commessa.codice}.txt`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="p-8 max-w-4xl">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">6. Atti SUET, FIR &amp; L.132/2025</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Documenti precompilati dinamicamente con catastale, PRG e calcoli RAI della commessa: <strong className="text-slate-700">{commessa.codice}</strong>
-        </p>
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
+            6. Relazione Asseverata SUET Roma
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
+            Bozza tecnica asseverata strutturata secondo la prassi SUET Roma Capitale e i campi
+            attivati dal titolo abilitativo e dai vincoli per la commessa{' '}
+            <strong className="text-zinc-950">{commessa.codice}</strong>.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 transition-colors"
+          >
+            {copied ? (
+              <Check size={13} className="text-emerald-700" />
+            ) : (
+              <Copy size={13} />
+            )}
+            <span>{copied ? 'Copiata' : 'Copia bozza'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 transition-colors"
+          >
+            <Download size={13} />
+            <span>Scarica .TXT</span>
+          </button>
+        </div>
       </header>
 
-      <div className="flex flex-wrap gap-1 mb-4 border-b border-slate-300">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 text-[13px] font-medium -mb-px border-b-2 transition-colors ${
-              tab === t.id ? 'border-sky-600 text-sky-800 bg-white' : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <section className="rounded-xl bg-white border border-zinc-300 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <label className="block">
+          <span className="block font-semibold text-zinc-700 mb-1">Tecnico Asseverante</span>
+          <input
+            className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-zinc-950 focus:outline-none focus:border-zinc-950"
+            value={tecnicoNome}
+            onChange={(e) => setTecnicoNome(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="block font-semibold text-zinc-700 mb-1">Committente / Richiedente</span>
+          <input
+            className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-zinc-950 focus:outline-none focus:border-zinc-950"
+            value={committenteNome}
+            placeholder="Nome e cognome o denominazione"
+            onChange={(e) => setCommittenteNome(e.target.value)}
+          />
+        </label>
+      </section>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200">
-          <p className="text-xs text-slate-500">Anteprima bozza — aggiornata automaticamente con i dati del Registro e dell'Audit RAI.</p>
-          <div className="flex items-center gap-2">
-            <CopyButton text={testo} label="Copia Testo" />
-            <button onClick={scaricaTxt} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-slate-800 text-white hover:bg-slate-700 transition-colors">
-              <Download size={13} /> .txt
-            </button>
-            <button onClick={scaricaDoc} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-sky-700 text-white hover:bg-sky-600 transition-colors">
-              <Download size={13} /> .doc (Word)
-            </button>
-          </div>
+      <section className="rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shadow-xs">
+        <div className="px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-300">
+          <span className="inline-flex items-center gap-2">
+            <FileCheck2 size={13} className="text-zinc-400" />
+            Bozza_SUET_{commessa.codice}.txt
+          </span>
+          <span className="text-[11px] text-zinc-400">Roma Capitale · R.T.A.</span>
         </div>
         <textarea
           readOnly
-          value={testo}
-          className="w-full h-[640px] p-6 text-[13px] leading-relaxed font-mono text-slate-800 bg-white resize-none focus:outline-none"
+          value={testoRelazione}
+          rows={32}
+          className="w-full bg-zinc-950 p-4 text-xs font-mono text-zinc-100 leading-relaxed focus:outline-none resize-y"
         />
-      </div>
+      </section>
     </div>
   );
 }

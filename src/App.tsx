@@ -1,364 +1,176 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Cloud, CheckCircle2, Loader2, AlertCircle, LogIn, LogOut, UserCheck, ShieldCheck, Bot, Menu } from 'lucide-react';
-import type { User } from '@supabase/supabase-js';
+import { useEffect, useState, type ComponentType } from 'react';
+import { Menu } from 'lucide-react';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
-import { CatalogoAdminModal } from '@/components/CatalogoAdminModal';
-import { AuthModal } from '@/components/AuthModal';
-import { LegalModal, type LegalTab } from '@/components/LegalModal';
 import { DueDiligence } from '@/modules/DueDiligence';
-import { AuditRAI } from '@/modules/AuditRAI';
-import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
-import { Impianti } from '@/modules/Impianti';
-import { Computo } from '@/modules/Computo';
+import { Cronoprogramma } from '@/modules/Cronoprogramma';
 import { Bozze } from '@/modules/Bozze';
-import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
-import { getSupabase } from '@/lib/supabase';
-import { caricaDaSupabase, sincronizzaCommessaSuSupabase } from '@/lib/supabaseSync';
+import { CassettoDocumentale } from '@/modules/CassettoDocumentale';
+import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
+import { useAttiva } from '@/lib/store';
 
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; errorMsg: string; stack: string }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, errorMsg: '', stack: '' };
+type ModuleMap = Record<string, Record<string, ComponentType | undefined>>;
+
+const allModuleFiles = import.meta.glob('./modules/*.tsx', { eager: true }) as ModuleMap;
+
+function resolveModule(
+  candidates: string[],
+  exportNames: string[],
+  label: string
+): ComponentType {
+  for (const path of candidates) {
+    const mod = allModuleFiles[path];
+    if (!mod) continue;
+    for (const expName of exportNames) {
+      if (typeof mod[expName] === 'function') {
+        return mod[expName]!;
+      }
+    }
+    if (typeof mod.default === 'function') {
+      return mod.default;
+    }
   }
 
-  static getDerivedStateFromError(error: Error) {
-    return {
-      hasError: true,
-      errorMsg: error?.message || String(error),
-      stack: error?.stack || '',
-    };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-neutral-950 text-white p-6 font-mono text-xs overflow-auto">
-          <h1 className="text-base font-bold text-red-400 mb-2">Errore catturato in runtime</h1>
-          <p className="mb-4 text-amber-300">{this.state.errorMsg}</p>
-          <pre className="whitespace-pre-wrap text-neutral-300 bg-neutral-900 p-4 border border-neutral-800">
-            {this.state.stack}
-          </pre>
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.clear();
-              window.location.reload();
-            }}
-            className="mt-4 px-4 py-2 bg-white text-neutral-950 font-sans font-semibold"
-          >
-            Pulisci cache locale e ricarica
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function AppContent() {
-  const [section, setSection] = useState<SectionId>('due-diligence');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [catalogoOpen, setCatalogoOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
-  const [legalOpen, setLegalOpen] = useState(false);
-  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
-  const [user, setUser] = useState<User | null>(null);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
-  const [syncMsg, setSyncMsg] = useState<string>('');
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  const attivaId = useStore((s) => s.attivaId);
-  const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
-  const vani = useStore((s) => (s.attivaId ? s.vani[s.attivaId] ?? EMPTY_VANI : EMPTY_VANI));
-  const voci = useStore((s) => (s.attivaId ? s.voci[s.attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
-  const caricaCataloghi = useStore((s) => s.caricaCataloghi);
-
-  const skipNextAutoSaveRef = useRef(true);
-  const isSavingRef = useRef(false);
-  const latestPayloadRef = useRef({ commessa, vani, voci, user });
-
-  useEffect(() => {
-    latestPayloadRef.current = { commessa, vani, voci, user };
-  }, [commessa, vani, voci, user]);
-
-  const openLegal = (tab: LegalTab) => {
-    setLegalTab(tab);
-    setLegalOpen(true);
-  };
-
-  const loadUserCloudData = useCallback(async () => {
-    skipNextAutoSaveRef.current = true;
-    try {
-      const cloudData = await caricaDaSupabase();
-      if (cloudData && cloudData.commesse.length > 0) {
-        useStore.setState((prev) => ({
-          commesse: cloudData.commesse,
-          attivaId: cloudData.commesse[0].id,
-          vani: { ...prev.vani, ...cloudData.vani },
-          voci: { ...prev.voci, ...cloudData.voci },
-        }));
-      }
-    } catch (err) {
-      console.warn('Lettura iniziale Supabase:', err);
-    } finally {
-      setIsHydrated(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    caricaCataloghi();
-
-    const sb = getSupabase();
-    if (!sb) {
-      setIsHydrated(true);
-      return;
-    }
-
-    sb.auth.getUser().then(({ data }) => {
-      const currentUser = data.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        loadUserCloudData();
-      } else {
-        setIsHydrated(true);
-      }
-    });
-
-    const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
-      const nextUser = session?.user ?? null;
-      setUser(nextUser);
-      if (nextUser) {
-        loadUserCloudData();
-      } else {
-        setSyncStatus('idle');
-        setSyncMsg('');
-      }
-    });
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, [caricaCataloghi, loadUserCloudData]);
-
-  const handleSyncCloud = useCallback(async () => {
-    const { commessa: currCommessa, vani: currVani, voci: currVoci, user: currUser } = latestPayloadRef.current;
-    if (!currCommessa) return;
-    if (!currUser) {
-      setAuthOpen(true);
-      return;
-    }
-    if (isSavingRef.current) return;
-
-    isSavingRef.current = true;
-    skipNextAutoSaveRef.current = true;
-    setSyncStatus('saving');
-    setSyncMsg('Auto-salvataggio...');
-
-    try {
-      await sincronizzaCommessaSuSupabase(currCommessa, currVani, currVoci);
-      const ora = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-      setSyncStatus('saved');
-      setSyncMsg(`Salvato (${ora})`);
-    } catch (err: unknown) {
-      setSyncStatus('error');
-      setSyncMsg(err instanceof Error ? err.message : 'Errore sincronizzazione');
-    } finally {
-      isSavingRef.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isHydrated || !attivaId || !user) return;
-
-    if (skipNextAutoSaveRef.current) {
-      skipNextAutoSaveRef.current = false;
-      return;
-    }
-
-    setSyncStatus('pending');
-    setSyncMsg('Modifiche in coda...');
-
-    const timer = window.setTimeout(() => {
-      handleSyncCloud();
-    }, 2000);
-
-    return () => window.clearTimeout(timer);
-  }, [isHydrated, attivaId, commessa, vani, voci, user?.id, handleSyncCloud]);
-
-  const handleLogout = async () => {
-    const sb = getSupabase();
-    if (sb) await sb.auth.signOut();
-  };
-
-  return (
-    <div className="min-h-screen bg-[#FAFAFA] text-neutral-900 flex overflow-x-clip">
-      <Sidebar
-        section={section}
-        onChange={setSection}
-        onOpenCatalogo={() => setCatalogoOpen(true)}
-        mobileOpen={mobileMenuOpen}
-        onCloseMobile={() => setMobileMenuOpen(false)}
-      />
-
-      <main className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-neutral-200 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 text-xs font-mono text-neutral-500 min-w-0">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Apri menu"
-              className="lg:hidden inline-flex items-center justify-center p-2 border border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50 shrink-0"
-            >
-              <Menu size={16} />
-            </button>
-            <span className="hidden sm:inline">SYNC:</span>
-            {user ? (
-              <span className="inline-flex items-center gap-1.5 font-medium text-neutral-900 truncate">
-                <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{user.email}</span>
-              </span>
-            ) : (
-              <span className="text-neutral-500 truncate">Locale</span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {syncMsg && (
-              <span
-                className={`text-[11px] font-mono ${
-                  syncStatus === 'error'
-                    ? 'text-red-600'
-                    : syncStatus === 'pending'
-                      ? 'text-amber-700'
-                      : 'text-neutral-700'
-                }`}
-              >
-                {syncMsg}
-              </span>
-            )}
-
-            {user ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSyncCloud}
-                  disabled={syncStatus === 'saving' || !commessa}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-neutral-950 text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors"
-                >
-                  {syncStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {syncStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                  {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
-                  {(syncStatus === 'idle' || syncStatus === 'pending') && <Cloud className="w-3.5 h-3.5" />}
-                  <span>{syncStatus === 'saving' ? 'Salvataggio...' : 'Salva ora'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  title="Esci dall'account"
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono border border-neutral-200 text-neutral-700 hover:border-neutral-950 transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Esci</span>
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAuthOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-neutral-950 text-white hover:bg-neutral-800 transition-colors"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Accedi</span>
-              </button>
-            )}
-          </div>
-        </header>
-
-        <div className="flex-1 w-full px-3 sm:px-6 py-5 sm:py-6">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-6 items-start">
-            <div className="xl:col-span-8 min-w-0 [&_.max-w-4xl]:max-w-none [&_.max-w-5xl]:max-w-none [&_.max-w-6xl]:max-w-none [&_.max-w-7xl]:max-w-none [&_table]:w-full">
-              {section === 'due-diligence' && <DueDiligence />}
-              {section === 'rai' && <AuditRAI />}
-              {section === 'lisp' && <GeneratoreLisp />}
-              {section === 'impianti' && <Impianti />}
-              {section === 'computo' && <Computo />}
-              {section === 'atti' && <Bozze />}
-            </div>
-
-            <div className="xl:col-span-4 min-w-0">
-              <CockpitPanel activeSection={section} onSelectSection={setSection} />
-            </div>
-          </div>
-        </div>
-
-        <footer className="border-t border-neutral-200 bg-white px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-neutral-500">
-          <div className="flex items-center gap-2">
-            <Bot className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            <span>
-              AI Act (Reg. UE 2024/1689): supporto tecnico soggetto a verifica e asseverazione del professionista.
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-neutral-700">
-            <button
-              type="button"
-              onClick={() => openLegal('privacy')}
-              className="inline-flex items-center gap-1 hover:text-neutral-950"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Privacy &amp; GDPR</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openLegal('ai-act')}
-              className="hover:text-neutral-950"
-            >
-              AI Act
-            </button>
-            <button
-              type="button"
-              onClick={() => openLegal('disclaimer')}
-              className="hover:text-neutral-950"
-            >
-              Note Legali
-            </button>
-          </div>
-        </footer>
-      </main>
-
-      <CatalogoAdminModal
-        open={catalogoOpen}
-        onClose={() => setCatalogoOpen(false)}
-        onUpdated={() => caricaCataloghi()}
-      />
-
-      <AuthModal
-        open={authOpen}
-        onClose={() => setAuthOpen(false)}
-        onSuccess={() => {
-          skipNextAutoSaveRef.current = false;
-          handleSyncCloud();
-        }}
-      />
-
-      <LegalModal
-        open={legalOpen}
-        initialTab={legalTab}
-        onClose={() => setLegalOpen(false)}
-        userEmail={user?.email ?? null}
-      />
+  return () => (
+    <div className="rounded-xl bg-white border border-zinc-300 p-5 text-xs text-zinc-700">
+      Modulo <strong>{label}</strong> non ancora presente in <code>src/modules/</code>.
     </div>
   );
 }
 
-export default function App() {
+const AuditRAIModule = resolveModule(
+  ['./modules/AuditRAI.tsx', './modules/Audit.tsx'],
+  ['AuditRAI', 'Audit'],
+  'Audit & RAI'
+);
+
+const AbachiModule = resolveModule(
+  ['./modules/Abachi.tsx', './modules/AbachiVani.tsx'],
+  ['Abachi', 'AbachiVani'],
+  'Abachi Vani & Infissi'
+);
+
+const ComputoModule = resolveModule(
+  ['./modules/Computo.tsx', './modules/ComputoMetrico.tsx'],
+  ['Computo', 'ComputoMetrico'],
+  'Computo Metrico'
+);
+
+export function App() {
+  const { commessa } = useAttiva();
+  const [activeSection, setActiveSection] = useState<SectionId>('due-diligence');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 1024) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleOpenOrToggleMenu = () => {
+    if (window.innerWidth < 1024) {
+      setMobileMenuOpen(true);
+    } else {
+      setDesktopCollapsed((v) => !v);
+    }
+  };
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'due-diligence':
+        return <DueDiligence />;
+      case 'audit-rai':
+        return <AuditRAIModule />;
+      case 'abachi':
+        return <AbachiModule />;
+      case 'computo':
+        return <ComputoModule />;
+      case 'cronoprogramma':
+        return <Cronoprogramma />;
+      case 'bozze':
+        return <Bozze />;
+      case 'documenti':
+        return <CassettoDocumentale />;
+      case 'autolisp':
+        return <GeneratoreLisp />;
+      default:
+        return <DueDiligence />;
+    }
+  };
+
+  const showTopTrigger = desktopCollapsed;
+
   return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-zinc-100 text-zinc-950 flex flex-col lg:flex-row">
+      <Sidebar
+        activeSection={activeSection}
+        onSelectSection={setActiveSection}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+        desktopCollapsed={desktopCollapsed}
+        onToggleDesktopCollapse={() => setDesktopCollapsed((v) => !v)}
+      />
+
+      <div className="flex-1 min-w-0 lg:h-screen lg:overflow-y-auto">
+        <div className="lg:hidden sticky top-0 z-20 bg-zinc-950 text-white border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="text-xs font-mono font-bold tracking-tight truncate">
+              MY ARCHINEXT
+            </span>
+            {commessa && (
+              <span className="text-[11px] font-mono text-zinc-400 truncate">
+                · {commessa.codice}
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenOrToggleMenu}
+            aria-label="Apri menu"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[11px] font-mono font-bold text-zinc-950 hover:bg-zinc-200 transition-colors shrink-0"
+          >
+            <Menu size={14} className="text-zinc-950" />
+            <span>Menu</span>
+          </button>
+        </div>
+
+        {showTopTrigger && (
+          <div className="hidden lg:flex sticky top-0 z-20 bg-zinc-100/95 backdrop-blur-xs border-b border-zinc-200 px-6 py-2.5 items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setDesktopCollapsed(false)}
+              aria-label="Apri menu laterale"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-mono font-bold text-white hover:bg-zinc-800 transition-colors"
+            >
+              <Menu size={14} />
+              <span>Menu</span>
+            </button>
+
+            <span className="text-xs font-mono text-zinc-600 truncate">
+              {commessa ? `${commessa.codice} · ${commessa.titolo}` : 'MY ARCHINEXT'}
+            </span>
+          </div>
+        )}
+
+        <div className="mx-auto max-w-[1600px] p-4 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+          <main className="xl:col-span-8 min-w-0">{renderSection()}</main>
+          <aside className="xl:col-span-4 min-w-0">
+            <CockpitPanel
+              activeSection={activeSection}
+              onSelectSection={setActiveSection}
+            />
+          </aside>
+        </div>
+      </div>
+    </div>
   );
 }
+
+export default App;

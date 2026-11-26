@@ -1,210 +1,238 @@
 import { useMemo, useState } from 'react';
-import { Download, Terminal, Settings2 } from 'lucide-react';
-import { useAttiva } from '@/lib/store';
-
-interface Config {
-  layerEsistente: string;
-  layerDemolizioni: string;
-  layerCostruzioni: string;
-  layerQuote: string;
-  coloreEsistente: number;
-  coloreDemolizioni: number;
-  coloreCostruzioni: number;
-  coloreQuote: number;
-  altezzaTesto: number;
-  decimaliVirgola: boolean;
-}
-
-const DEFAULT: Config = {
-  layerEsistente: '01_ESISTENTE_MURI',
-  layerDemolizioni: '02_DEMOLIZIONI_GIALLO',
-  layerCostruzioni: '03_COSTRUZIONI_ROSSO',
-  layerQuote: '04_QUOTE_TESTI',
-  coloreEsistente: 7,
-  coloreDemolizioni: 2,
-  coloreCostruzioni: 1,
-  coloreQuote: 3,
-  altezzaTesto: 0.2,
-  decimaliVirgola: true,
-};
-
-function buildLsp(cfg: Config, commessaCode: string): string {
-  const fmt = cfg.decimaliVirgola
-    ? `;; formattazione italiana: virgola decimale
-  (setq str (rtos area 2 2))
-  (while (vl-string-search "." str)
-    (setq str (vl-string-subst "," "." str))
-  )`
-    : `(setq str (rtos area 2 2))`;
-
-  return `;;; ============================================================
-;;; Roma_DT_Tools.lsp - Layer Gialli/Rossi & Aree Vani
-;;; Gestione cantiere: stato di fatto (gialli) vs progetto (rossi)
-;;; Commessa: ${commessaCode}
-;;; Comandi: SETUPGR | AREAVANO
-;;; ============================================================
-
-(defun c:SETUPGR ()
-  ;; Creazione layer standard gestionale
-  (defun mklay (name aci)
-    (if (not (tblsearch "LAYER" name))
-      (entmake
-        (list
-          '(0 . "LAYER") '(100 . "AcDbSymbolTableRecord") '(100 . "AcDbLayerTableRecord")
-          (cons 2 name) '(70 . 0) (cons 62 aci) '(6 . "Continuous")
-        )
-      )
-    )
-  )
-  (mklay "${cfg.layerEsistente}"      ${cfg.coloreEsistente})
-  (mklay "${cfg.layerDemolizioni}"  ${cfg.coloreDemolizioni})
-  (mklay "${cfg.layerCostruzioni}"   ${cfg.coloreCostruzioni})
-  (mklay "${cfg.layerQuote}"         ${cfg.coloreQuote})
-  (princ "\\n>> SETUPGR: 4 layer standard creati (Esistente - Demolizioni/Giallo - Costruzioni/Rosso - Quote/Verde).")
-  (princ)
-)
-
-(defun c:AREAVANO (/ sel ent obj area p10 nome str txtH lay)
-  ;; Calcolo area vano e inserimento testo "NOME VANO - XX,XX mq"
-  (setq nome (getstring T "\\nNome del vano (es. SOGGIORNO): "))
-  (if (= nome "") (setq nome "VANO"))
-
-  (setq sel (entsel "\\nSeleziona una polilinea chiusa del vano (o Invio per punto interno): "))
-
-  (if sel
-    (progn
-      (setq ent (car sel))
-      (if (= (cdr (assoc 0 (entget ent))) "LWPOLYLINE")
-        (progn
-          (setq obj (vlax-ename->vla-object ent))
-          (setq area (vla-get-Area obj))
-          (setq p10 (vlax-get obj 'Centroid))
-        )
-        (progn (princ "\\n>> L'oggetto selezionato non e' una polilinea.") (exit))
-      )
-    )
-    (progn
-      (setq p10 (getpoint "\\nClicca un punto interno al vano: "))
-      (command "_.BOUNDARY" p10 "")
-      (setq ent (entlast))
-      (setq obj (vlax-ename->vla-object ent))
-      (setq area (vla-get-Area obj))
-      (entdel ent) ; cancella il boundary temporaneo
-    )
-  )
-
-  ${fmt}
-
-  (setq txtH (getvar "TEXTSIZE"))
-  (if (<= txtH 0.0) (setq txtH ${cfg.altezzaTesto.toFixed(2)}))
-  (setq lay "${cfg.layerQuote}")
-  (if (not (tblsearch "LAYER" lay)) (setq lay "0"))
-
-  (entmake
-    (list
-      '(0 . "TEXT") '(100 . "AcDbEntity") '(100 . "AcDbText")
-      (cons 8 lay)
-      (cons 10 (list (car p10) (cadr p10) 0.0))
-      (cons 40 txtH)
-      (cons 1 (strcat (strcase nome) " - " str " mq"))
-      '(72 . 1) '(73 . 2)
-      (cons 11 (list (car p10) (cadr p10) 0.0))
-    )
-  )
-  (princ "\\n>> AREAVANO: area inserita sul layer ${cfg.layerQuote}.")
-  (princ)
-)
-
-(princ "\\n>> Roma_DT_Tools.lsp caricato. Comandi disponibili: SETUPGR, AREAVANO.")
-(princ)
-`;
-}
-
-const inputCls =
-  'w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-[13px] text-slate-800 focus:outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600 transition-colors';
+import { Copy, Check, Download, SlidersHorizontal, Terminal } from 'lucide-react';
+import { useStore, useAttiva } from '@/lib/store';
 
 export function GeneratoreLisp() {
   const { commessa } = useAttiva();
-  const [cfg, setCfg] = useState<Config>(DEFAULT);
-  const [showCfg, setShowCfg] = useState(false);
-  const code = useMemo(() => buildLsp(cfg, commessa?.codice ?? 'N/D'), [cfg, commessa?.codice]);
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? [] : []));
 
-  const download = () => {
-    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'Roma_DT_Tools.lsp';
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const [layerEsistente, setLayerEsistente] = useState('01_ESISTENTE_MURI');
+  const [layerGialli, setLayerGialli] = useState('02_DEMOLIZIONI_GIALLO');
+  const [layerRossi, setLayerRossi] = useState('03_COSTRUZIONI_ROSSO');
+  const [layerQuote, setLayerQuote] = useState('04_QUOTE_TESTI');
+  const [showConfig, setShowConfig] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const codiceCommessa = commessa?.codice ?? '2026-014';
+  const titoloCommessa = commessa?.titolo ?? 'Commessa Roma Capitale';
+
+  const lispCode = useMemo(() => {
+    const vaniComment =
+      vani.length > 0
+        ? vani
+            .map(
+              (v) =>
+                `;;;   - ${v.nome}: ${(Number(v.superficie) || 0).toFixed(2)} mq (${v.destinazione})`
+            )
+            .join('\n')
+        : ';;;   - Nessun vano censito';
+
+    return `;;; =====================================================================
+;;; Roma_DT_Tools.lsp - Layer Gialli/Rossi & Aree Vani
+;;; Gestione cantiere: stato di fatto (gialli) vs progetto (rossi)
+;;; Commessa: ${codiceCommessa} - ${titoloCommessa}
+;;; Vani censiti:
+${vaniComment}
+;;; Comandi: SETUPGR | AREAVANO
+;;; =====================================================================
+
+(defun c:SETUPGR ( / mklay )
+  (vl-load-com)
+  (defun mklay ( name aci )
+    (if (not (tblsearch "LAYER" name))
+      (entmake
+        (list
+          '(0 . "LAYER")
+          '(100 . "AcDbSymbolTableRecord")
+          '(100 . "AcDbLayerTableRecord")
+          (cons 2 name)
+          '(70 . 0)
+          (cons 62 aci)
+          '(6 . "Continuous")
+        )
+      )
+    )
+  )
+  (mklay "${layerEsistente}" 7)
+  (mklay "${layerGialli}"    2)
+  (mklay "${layerRossi}"     1)
+  (mklay "${layerQuote}"     3)
+  (princ "\\n>> SETUPGR: layer configurati per commessa ${codiceCommessa}.")
+  (princ)
+)
+
+(defun c:AREAVANO ( / ent obj area nome txt pt )
+  (vl-load-com)
+  (setq ent (entsel "\\nSeleziona contorno chiuso del vano: "))
+  (if ent
+    (progn
+      (setq obj (vlax-ename->vla-object (car ent)))
+      (if (vlax-property-available-p obj 'Area)
+        (progn
+          (setq area (vla-get-Area obj))
+          (setq nome (getstring T "\\nNome vano [es. SOGGIORNO]: "))
+          (if (= nome "") (setq nome "VANO"))
+          (setq pt (getpoint "\\nPunto inserimento etichetta: "))
+          (if pt
+            (progn
+              (setq txt (strcat nome " - " (rtos area 2 2) " mq"))
+              (entmake
+                (list
+                  '(0 . "TEXT")
+                  (cons 8 "${layerQuote}")
+                  (cons 10 pt)
+                  (cons 11 pt)
+                  '(40 . 0.18)
+                  (cons 1 txt)
+                )
+              )
+            )
+          )
+        )
+        (princ "\\nL'entita selezionata non ha proprieta Area.")
+      )
+    )
+  )
+  (princ)
+)
+
+(princ "\\nCaricato Roma_DT_Tools.lsp. Digita SETUPGR o AREAVANO.")
+(princ)
+`;
+  }, [codiceCommessa, titoloCommessa, vani, layerEsistente, layerGialli, layerRossi, layerQuote]);
+
+  if (!commessa) {
+    return <div className="p-10 text-zinc-600">Nessuna commessa attiva.</div>;
+  }
+
+  const handleCopy = async () => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(lispCode).catch(() => {});
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
-  const upd = (patch: Partial<Config>) => setCfg((c) => ({ ...c, ...patch }));
+  const handleDownload = () => {
+    const blob = new Blob([lispCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Roma_DT_Tools.lsp';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="p-8 max-w-5xl">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">3. Automazione CAD (AutoLISP)</h1>
-          <p className="text-sm text-slate-500 mt-1">Genera lo script standard per la gestione grafica Gialli (demolizioni) e Rossi (costruzioni).</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
+            AutoLISP CAD · Gialli e Rossi
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
+            Genera lo script standard per la gestione grafica Gialli (demolizioni) e Rossi (costruzioni).
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowCfg(!showCfg)} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-slate-300 bg-white text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
-            <Settings2 size={14} /> Configura
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowConfig((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 transition-colors"
+          >
+            <SlidersHorizontal size={13} />
+            <span>Configura</span>
           </button>
-          <button onClick={download} className="inline-flex items-center gap-2 px-4 py-2 rounded bg-slate-900 text-white text-[13px] font-medium hover:bg-slate-700 transition-colors">
-            <Download size={15} /> Scarica Roma_DT_Tools.lsp
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 transition-colors"
+          >
+            {copied ? <Check size={13} className="text-emerald-700" /> : <Copy size={13} />}
+            <span>{copied ? 'Copiato' : 'Copia'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 transition-colors"
+          >
+            <Download size={13} />
+            <span>Scarica Roma_DT_Tools.lsp</span>
           </button>
         </div>
       </header>
 
-      {showCfg && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-          {([
-            ['layerEsistente', 'Layer esistente', cfg.coloreEsistente, 'coloreEsistente'],
-            ['layerDemolizioni', 'Layer demolizioni', cfg.coloreDemolizioni, 'coloreDemolizioni'],
-            ['layerCostruzioni', 'Layer costruzioni', cfg.coloreCostruzioni, 'coloreCostruzioni'],
-            ['layerQuote', 'Layer quote/testi', cfg.coloreQuote, 'coloreQuote'],
-          ] as const).map(([key, label, col, colKey]) => (
-            <div key={key} className="space-y-1.5">
-              <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</label>
-              <input className={inputCls} value={cfg[key]} onChange={(e) => upd({ [key]: e.target.value })} />
-              <input type="number" min={1} max={255} className={inputCls} value={col} onChange={(e) => upd({ [colKey]: parseInt(e.target.value) || 1 })} />
-            </div>
-          ))}
-          <div>
-            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1">Altezza testo (m)</label>
-            <input type="number" min={0.05} step={0.05} className={inputCls} value={cfg.altezzaTesto} onChange={(e) => upd({ altezzaTesto: parseFloat(e.target.value) || 0.2 })} />
-          </div>
-          <label className="flex items-center gap-2.5 cursor-pointer select-none self-end pb-2">
-            <input type="checkbox" checked={cfg.decimaliVirgola} onChange={(e) => upd({ decimaliVirgola: e.target.checked })} className="w-4 h-4 accent-sky-600" />
-            <span className="text-[13px] text-slate-700">Virgola decimale (it)</span>
+      {showConfig && (
+        <section className="rounded-xl bg-white border border-zinc-300 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <label className="block">
+            <span className="block font-semibold text-zinc-700 mb-1">Layer Esistente (ACI 7)</span>
+            <input
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 font-mono text-zinc-950 focus:outline-none focus:border-zinc-950"
+              value={layerEsistente}
+              onChange={(e) => setLayerEsistente(e.target.value)}
+            />
           </label>
-        </div>
+          <label className="block">
+            <span className="block font-semibold text-zinc-700 mb-1">Layer Gialli (ACI 2)</span>
+            <input
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 font-mono text-zinc-950 focus:outline-none focus:border-zinc-950"
+              value={layerGialli}
+              onChange={(e) => setLayerGialli(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="block font-semibold text-zinc-700 mb-1">Layer Rossi (ACI 1)</span>
+            <input
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 font-mono text-zinc-950 focus:outline-none focus:border-zinc-950"
+              value={layerRossi}
+              onChange={(e) => setLayerRossi(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="block font-semibold text-zinc-700 mb-1">Layer Quote (ACI 3)</span>
+            <input
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 font-mono text-zinc-950 focus:outline-none focus:border-zinc-950"
+              value={layerQuote}
+              onChange={(e) => setLayerQuote(e.target.value)}
+            />
+          </label>
+        </section>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {[
-          { name: 'SETUPGR', desc: 'Crea i 4 layer standard con colori ACI: esistente (bianco/nero 7), demolizioni (giallo 2), costruzioni (rosso 1), quote e testi (verde 3).' },
-          { name: 'AREAVANO', desc: 'Seleziona (o clicca il contorno di) un vano e inserisce il testo "NOME VANO - XX,XX mq" centrato, sul layer quote.' },
-          { name: 'Uso', desc: 'Carica il file con APPLOAD in AutoCAD/BricsCAD, digita SETUPGR una volta per disegno e AREAVANO per ogni ambiente.' },
-        ].map((c) => (
-          <div key={c.name} className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-            <p className="font-mono text-sm font-semibold text-sky-700 flex items-center gap-1.5">
-              <Terminal size={14} /> {c.name}
-            </p>
-            <p className="text-xs text-slate-600 leading-relaxed mt-1.5">{c.desc}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="rounded-xl bg-white border border-zinc-300 p-4">
+          <p className="font-mono text-xs font-bold text-zinc-950">&gt;_ SETUPGR</p>
+          <p className="text-xs text-zinc-700 mt-1.5 leading-relaxed">
+            Crea i 4 layer standard con colori ACI: esistente (bianco/nero 7), demolizioni (giallo 2), costruzioni (rosso 1), quote e testi (verde 3).
+          </p>
+        </div>
+        <div className="rounded-xl bg-white border border-zinc-300 p-4">
+          <p className="font-mono text-xs font-bold text-zinc-950">&gt;_ AREAVANO</p>
+          <p className="text-xs text-zinc-700 mt-1.5 leading-relaxed">
+            Seleziona il contorno chiuso di un vano e inserisce l&apos;etichetta con superficie in mq sul layer delle quote.
+          </p>
+        </div>
+        <div className="rounded-xl bg-white border border-zinc-300 p-4">
+          <p className="font-mono text-xs font-bold text-zinc-950">&gt;_ Uso</p>
+          <p className="text-xs text-zinc-700 mt-1.5 leading-relaxed">
+            Carica il file con APPLOAD in AutoCAD/BricsCAD, digita SETUPGR una volta per disegno e AREAVANO per ogni vano.
+          </p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-2.5 bg-slate-900">
-          <p className="font-mono text-xs text-slate-300">Roma_DT_Tools.lsp</p>
+      <section className="rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shadow-xs">
+        <div className="px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-300">
+          <span className="inline-flex items-center gap-2">
+            <Terminal size={13} className="text-zinc-400" />
+            Roma_DT_Tools.lsp
+          </span>
+          <span className="text-[11px] text-zinc-400">AutoLISP</span>
         </div>
-        <pre className="p-4 overflow-auto text-[12px] leading-relaxed font-mono text-slate-800 bg-slate-50 max-h-[520px]">
-          {code}
+        <pre className="p-4 text-xs font-mono text-zinc-100 overflow-x-auto leading-relaxed max-h-[420px]">
+          {lispCode}
         </pre>
-      </div>
+      </section>
     </div>
   );
 }

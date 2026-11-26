@@ -5,14 +5,15 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
-  ArrowUpRight,
   Compass,
   Trees,
+  FileSearch,
+  ExternalLink,
 } from 'lucide-react';
 import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
 import type { SectionId } from '@/components/Sidebar';
 
-const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false, false];
+const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false];
 
 type AgentMode = 'generale' | 'urbanistica' | 'ambiente';
 
@@ -24,26 +25,26 @@ interface CockpitPanelProps {
 export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelProps) {
   const attivaId = useStore((s) => s.attivaId);
   const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
-  const vani = useStore((s) => (s.attivaId ? s.vani[s.attivaId] ?? EMPTY_VANI : EMPTY_VANI));
-  const voci = useStore((s) => (s.attivaId ? s.voci[s.attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
-  const steps = useStore((s) => (attivaId ? s.steps[attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
+  const vani = useStore((s) => (s.attivaId ? s.vani?.[s.attivaId] ?? EMPTY_VANI : EMPTY_VANI));
+  const voci = useStore((s) => (s.attivaId ? s.voci?.[s.attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
+  const steps = useStore((s) => (attivaId ? s.steps?.[attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
 
   const [agentMode, setAgentMode] = useState<AgentMode>('generale');
 
   const stats = useMemo(() => {
-    const mqTotali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
-    const mqEffettivi = mqTotali > 0 ? mqTotali : 72.9;
+    const mqAudit = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
+    const mqEffettivi = mqAudit > 0 ? mqAudit : 72.0;
 
-    const lavori = voci
+    const haVociComputo = voci.length > 0;
+    const lavoriComputo = voci
       .filter((v) => !v.oneriSicurezza)
       .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
-
-    const oneri = voci
-      .filter((v) => v.oneriSicurezza)
+    const oneriComputo = voci
+      .filter((v) => Boolean(v.oneriSicurezza))
       .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
 
-    const totaleLavori = lavori > 0 ? lavori : 22321;
-    const totaleOneri = oneri > 0 ? oneri : 13800;
+    const totaleLavori = haVociComputo ? lavoriComputo : mqAudit > 0 ? mqAudit * 280 : 0;
+    const totaleOneri = haVociComputo ? oneriComputo : mqAudit > 0 ? mqAudit * 25 : 0;
     const totaleStimato = totaleLavori + totaleOneri;
     const incidenzaMq = mqEffettivi > 0 ? totaleStimato / mqEffettivi : 0;
 
@@ -54,17 +55,24 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
       return fin / sup < 1 / 8 && !v.vmc;
     }).length;
 
+    const stepCompletati = (steps ?? []).slice(0, 6).filter(Boolean).length;
+    const haDatiCatastali = Boolean(
+      commessa?.foglio?.trim() || commessa?.particella?.trim() || commessa?.subalterno?.trim()
+    );
+
     return {
       mqEffettivi,
-      nVani: vani.length > 0 ? vani.length : 7,
+      nVani: vani.length,
       totaleLavori,
       totaleOneri,
       totaleStimato,
       incidenzaMq,
       raiCritici,
-      stepCompletati: steps.filter(Boolean).length,
+      stepCompletati,
+      stimaDaAudit: !haVociComputo && mqAudit > 0,
+      haDatiCatastali,
     };
-  }, [vani, voci, steps]);
+  }, [vani, voci, steps, commessa]);
 
   const formatEuro = (val: number) =>
     new Intl.NumberFormat('it-IT', {
@@ -74,55 +82,79 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
     }).format(val);
 
   const titolo = commessa?.titolo ?? 'Commessa Attiva';
-  const tipologia = commessa?.tipologia ?? 'Ristrutturazione SCIA';
+  const tipologia = commessa?.tipologia ?? 'Manutenzione Straordinaria CILA';
   const tessuto = commessa?.tessutoPRG ?? 'T1';
   const haVincolo = Boolean(commessa?.vincoloSoprintendenza);
   const haCartaQualita = Boolean(commessa?.cartaQualita);
+  const indirizzo = commessa?.indirizzo ?? 'Via del Boschetto, 72, 00184 Roma RM';
+  const formapsUrl = `https://www.formaps.it/?q=${encodeURIComponent(indirizzo)}`;
 
   const agentNotes = useMemo(() => {
+    const combinato = `${tipologia} ${titolo}`.toLowerCase();
+    const isFrazionamento = combinato.includes('frazionamento');
+    const isCilaOrLibera =
+      !isFrazionamento &&
+      (tipologia.includes('CILA') || tipologia.includes('Libera'));
+    const isScia = !isFrazionamento && tipologia.includes('SCIA');
+    const isEdificazione =
+      !isFrazionamento &&
+      (tipologia.includes('Permesso di Costruire') ||
+        tipologia.includes('Nuova Edificazione'));
+
     if (agentMode === 'urbanistica') {
+      const notaTitolo = isFrazionamento
+        ? `Procedimento ${tipologia}: verifica ammissibilità del frazionamento nel tessuto ${tessuto}, autonomia funzionale/impiantistica delle unità risultanti e requisiti igienico-sanitari/monetizzazione.`
+        : isEdificazione
+          ? `Procedimento ${tipologia}: riscontra indici urbanistici, SUL/volumi, distacchi e contributo di costruzione nel tessuto ${tessuto} (${commessa?.municipio ?? 'Roma Capitale'}).`
+          : isScia
+            ? `Procedimento ${tipologia}: verifica coerenza con le NTA del tessuto ${tessuto}, eventuale incidenza su sagoma/prospetti/destinazioni d'uso e profili strutturali.`
+            : `Procedimento ${tipologia}: verifica che le opere interne restino nel perimetro consentito nel tessuto ${tessuto} senza alterare parti strutturali o prospetti.`;
+
       return [
-        `Tessuto ${tessuto} (${commessa?.municipio ?? 'Roma Capitale'}): verifica ammissibilità, indici e disciplina attuativa per ${tipologia} o Permesso di Costruire / nuova edificazione.`,
-        'Controlla distacchi, altezze, sagoma/inviluppo, destinazioni d’uso e dotazione di standard/parcheggi pertinenziali.',
+        notaTitolo,
+        `Controlla stato legittimo (art. 9-bis D.P.R. 380/2001), allineamento catastale (Fg./Part./Sub.) e aggiornamento DOCFA a fine lavori (L. 122/2010).`,
         haVincolo
-          ? 'Vincolo D.Lgs 42/2004 attivo: valuta coerenza paesaggistica/storica prima del deposito SUET.'
-          : 'Verifica eventuali ambiti di pianificazione esecutiva o strumenti attuativi sul lotto.',
+          ? 'Vincolo D.Lgs 42/2004 attivo: verifica autorizzazione/parere Soprintendenza e prescrizioni di tutela collegate al titolo.'
+          : 'Verifica eventuali ambiti di pianificazione esecutiva, vincoli sovraordinati o prescrizioni del municipio.',
       ];
     }
 
     if (agentMode === 'ambiente') {
+      const notaAmbienteTitolo =
+        isEdificazione || isFrazionamento
+          ? `Ambiente & ${tipologia}: cura invarianza idraulica, permeabilità dei suoli (DAC 90/2026 & REC Roma), dotazioni impiantistiche/energetiche e gestione rifiuti (D.Lgs. 152/2006).`
+          : `Ambiente & ${tipologia}: verifica RAI (>= 1/8) o VMC per locali/bagni ciechi, requisiti termo-igrometrici e conferimento rifiuti di cantiere con FIR (D.Lgs. 152/2006).`;
+
       return [
-        'Invarianza idraulica e permeabilità dei suoli (DAC 90/2026 & REC Roma): verifica superfici drenanti e laminazione meteorica per nuova edificazione o ampliamento.',
+        notaAmbienteTitolo,
         haCartaQualita
-          ? 'Carta per la Qualità attiva: integra soluzioni su materiali, verde e microclima urbano.'
-          : 'Valuta screening ambientale/paesaggistico, emissioni acustiche (L. 447/1995) e gestione terre/rocce o rifiuti di cantiere.',
-        'Controlla requisiti energetici, ombreggiamento e comfort termo-igrometrico in relazione all’intervento.',
+          ? 'Carta per la Qualità attiva: riscontra coerenza di materiali, infissi, verde/spazi aperti e permeabilità con le prescrizioni del PRG.'
+          : 'Verifica in Due Diligence vincoli ambientali, tutela acustica e sicurezza di cantiere (D.Lgs. 81/2008).',
+        isCilaOrLibera
+          ? 'In regime CILA/Edilizia Libera cura soprattutto ventilazione/VMC, impianti D.M. 37/08 e tracciabilità rifiuti inerti.'
+          : 'Allinea verifiche ambientali, abachi vani e voci del Prezzario Regionale del Lazio nella relazione SUET.',
       ];
     }
 
+    const notaGeneraleTitolo = isFrazionamento
+      ? `Titolo ${tipologia} su "${titolo}": allinea unità risultanti, verifiche RAI/VMC per singola U.I.U., catasto e bozza SUET.`
+      : isEdificazione
+        ? `Titolo ${tipologia} su "${titolo}": coordina parametri urbanistici, contributo di costruzione, invarianza idraulica e quadro economico.`
+        : isScia
+          ? `Titolo ${tipologia} su "${titolo}": riscontra elaborati grafici, profili strutturali/prospettici, stato legittimo e tessuto ${tessuto}.`
+          : `Titolo ${tipologia} su "${titolo}": riscontra visura/planimetria catastale, assenza parti strutturali e tessuto ${tessuto}.`;
+
     return [
-      `In ${tessuto} (${titolo}) verifica sempre la consistenza d’impianto e la coerenza catastale/edilizia.`,
+      notaGeneraleTitolo,
       haVincolo
-        ? 'Con vincolo D.Lgs 42/2004, le modifiche esterne o prospettiche richiedono parere/autorizzazione.'
-        : 'Controlla i titoli abilitativi (CILA / SCIA / PdC) e l’allineamento con le NTA del PRG.',
-      'Allinea abachi vani, verifiche RAI e voci del Prezzario Regionale del Lazio prima del deposito.',
+        ? `Con vincolo D.Lgs 42/2004 e ${tipologia}, verifica sempre atti/pareri della Soprintendenza prima dell'avvio lavori.`
+        : `Controlla coerenza tra stato legittimo, ${tipologia} e NTA del PRG.`,
+      'Allinea dati di Due Diligence, abachi vani, verifiche RAI e voci del Prezzario Regionale del Lazio prima del deposito.',
     ];
-  }, [agentMode, tessuto, commessa?.municipio, tipologia, haVincolo, haCartaQualita, titolo]);
-
-  const nextSectionMap: Record<SectionId, { id: SectionId; label: string }> = {
-    'due-diligence': { id: 'rai', label: 'Passa all’Audit RAI' },
-    rai: { id: 'lisp', label: 'Genera script AutoLISP' },
-    lisp: { id: 'impianti', label: 'Verifica Impianti' },
-    impianti: { id: 'computo', label: 'Apri Computo Lazio' },
-    computo: { id: 'atti', label: 'Prepara Atti SUET' },
-    atti: { id: 'due-diligence', label: 'Torna a Due Diligence' },
-  };
-
-  const nextStep = nextSectionMap[activeSection];
+  }, [agentMode, tipologia, titolo, tessuto, commessa?.municipio, haVincolo, haCartaQualita]);
 
   return (
     <div className="space-y-4">
-      {/* Quadro economico live su sfondo nero con riquadri grigio chiaro */}
       <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
           <div className="flex items-center gap-2">
@@ -132,7 +164,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
             </h2>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 border border-zinc-600/80 text-zinc-100">
-            Prezzario Lazio
+            {stats.stimaDaAudit ? 'Stima da Audit mq' : 'Prezzario Lazio'}
           </span>
         </div>
 
@@ -145,13 +177,17 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
 
         <div className="mt-3.5 grid grid-cols-2 gap-2.5">
           <div className="rounded-lg bg-zinc-800 border border-zinc-600/80 p-2.5">
-            <span className="block text-[10px] font-mono uppercase text-zinc-300">Lavori a misura</span>
+            <span className="block text-[10px] font-mono uppercase text-zinc-300">
+              Lavori a misura
+            </span>
             <span className="block text-sm font-mono font-semibold text-white mt-0.5 tabular-nums">
               {formatEuro(stats.totaleLavori)}
             </span>
           </div>
           <div className="rounded-lg bg-zinc-800 border border-zinc-600/80 p-2.5">
-            <span className="block text-[10px] font-mono uppercase text-zinc-300">Oneri Sicurezza</span>
+            <span className="block text-[10px] font-mono uppercase text-zinc-300">
+              Oneri Sicurezza
+            </span>
             <span className="block text-sm font-mono font-semibold text-amber-300 mt-0.5 tabular-nums">
               {formatEuro(stats.totaleOneri)}
             </span>
@@ -166,7 +202,6 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
         </div>
       </section>
 
-      {/* Assistente tecnico su sfondo nero con riquadri grigio chiaro */}
       <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
         <div className="flex items-start justify-between gap-2 pb-3 border-b border-zinc-800">
           <div className="flex items-center gap-2">
@@ -176,7 +211,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
                 Assistente Tecnico
               </h2>
               <p className="text-[11px] font-mono text-zinc-400">
-                PRG Roma · REC · DAC 90/2026
+                {tipologia} · PRG Roma · REC · DAC 90/2026
               </p>
             </div>
           </div>
@@ -230,27 +265,38 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
             </div>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={() => onSelectSection(nextStep.id)}
-          className="mt-3.5 w-full py-2 px-3 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
-        >
-          <span>{nextStep.label}</span>
-          <ArrowUpRight size={14} />
-        </button>
       </section>
 
-      {/* Stato conformità e atti su sfondo nero con campi grigio chiaro */}
       <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
-        <div className="flex items-center gap-2 pb-3 border-b border-zinc-800">
-          <ShieldCheck size={15} className="text-zinc-200" />
-          <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
-            Stato Conformità &amp; Atti
-          </h2>
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={15} className="text-zinc-200" />
+            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
+              Due Diligence, Conformità &amp; Atti
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelectSection('due-diligence')}
+            className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
+              activeSection === 'due-diligence'
+                ? 'bg-white text-zinc-950 border-white font-semibold'
+                : 'bg-zinc-800 text-zinc-200 border-zinc-700 hover:text-white'
+            }`}
+          >
+            <FileSearch size={10} />
+            <span>Scheda DD</span>
+          </button>
         </div>
 
         <div className="mt-3 space-y-2 text-xs">
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-zinc-300">Catasto &amp; PRG</span>
+            <span className="font-mono text-white text-right">
+              {tessuto} · {stats.haDatiCatastali ? 'Dati censiti' : 'Da completare'}
+            </span>
+          </div>
+
           <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
             <span className="text-zinc-300">Titolo Abilitativo</span>
             <span className="font-mono text-white text-right">{tipologia}</span>
@@ -289,8 +335,21 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
           </div>
 
           <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
-            <span className="text-zinc-300">Iter 7 Step</span>
-            <span className="font-mono text-white tabular-nums">{stats.stepCompletati}/7</span>
+            <span className="text-zinc-300">Iter 6 Step</span>
+            <span className="font-mono text-white tabular-nums">{stats.stepCompletati}/6</span>
+          </div>
+
+          <div className="pt-1 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+            <span className="truncate">{indirizzo}</span>
+            <a
+              href={formapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-zinc-200 hover:text-white shrink-0 ml-2"
+            >
+              <span>Formaps</span>
+              <ExternalLink size={11} />
+            </a>
           </div>
         </div>
       </section>
