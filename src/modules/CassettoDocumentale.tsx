@@ -8,8 +8,9 @@ import {
   Eye,
   Tag,
   Search,
+  Link2,
 } from 'lucide-react';
-import { useAttiva } from '@/lib/store';
+import { useAttiva, useStore } from '@/lib/store';
 
 export type CategoriaDocumento =
   | 'Catasto & Planimetrie'
@@ -29,6 +30,7 @@ interface DocumentoArchivio {
   dataCaricamento: string;
   note: string;
   dataUrl?: string;
+  collegamento?: string;
 }
 
 const CATEGORIE: CategoriaDocumento[] = [
@@ -50,6 +52,7 @@ const DOCUMENTI_INIZIALI: DocumentoArchivio[] = [
     tipoMime: 'application/pdf',
     dataCaricamento: '2026-11-20',
     note: 'Visura storica per immobile — controllo intestatari e dati censuari',
+    collegamento: 'Collegato a Due Diligence & Commessa',
   },
   {
     id: 'doc-init-2',
@@ -59,6 +62,7 @@ const DOCUMENTI_INIZIALI: DocumentoArchivio[] = [
     tipoMime: 'application/pdf',
     dataCaricamento: '2026-11-20',
     note: 'Planimetria depositata in atti — riscontro stato legittimo',
+    collegamento: 'Collegato a Audit & RAI / Abachi / Computo',
   },
 ];
 
@@ -83,6 +87,7 @@ function formatBytes(bytes: number): string {
 
 export function CassettoDocumentale() {
   const { commessa } = useAttiva();
+  const importaDaDocumento = useStore((s) => s.importaDaDocumento);
   const commessaId = commessa?.id ?? 'default';
 
   const [documenti, setDocumenti] = useState<DocumentoArchivio[]>(() =>
@@ -94,12 +99,14 @@ export function CassettoDocumentale() {
   const [ricerca, setRicerca] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [erroreStorage, setErroreStorage] = useState<string | null>(null);
+  const [esitoCollegamento, setEsitoCollegamento] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setDocumenti(loadDocsForCommessa(commessaId));
     setErroreStorage(null);
+    setEsitoCollegamento(null);
   }, [commessaId]);
 
   useEffect(() => {
@@ -124,28 +131,46 @@ export function CassettoDocumentale() {
     if (!fileList || fileList.length === 0) return;
 
     Array.from(fileList).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = typeof reader.result === 'string' ? reader.result : undefined;
-        const safeDataUrl = file.size <= 2.5 * 1024 * 1024 ? result : undefined;
+      void (async () => {
+        let collegamentoText = 'Collegato alla commessa attiva';
+        if (typeof importaDaDocumento === 'function') {
+          try {
+            const res = await importaDaDocumento(file, {
+              commessaId: commessa.id,
+              categoria: categoriaSelezionata,
+              modalita: 'unisci',
+            });
+            collegamentoText = res.riepilogo;
+            setEsitoCollegamento(`${file.name}: ${res.riepilogo}`);
+          } catch {
+            collegamentoText = 'Archiviato nel fascicolo della commessa';
+          }
+        }
 
-        const nuovoDoc: DocumentoArchivio = {
-          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          nome: file.name,
-          categoria: categoriaSelezionata,
-          dimensione: file.size,
-          tipoMime: file.type || 'application/octet-stream',
-          dataCaricamento: new Date().toISOString().slice(0, 10),
-          note:
-            file.size > 2.5 * 1024 * 1024
-              ? 'File > 2,5 MB: indicizzato nel fascicolo (ricaricare per download diretto)'
-              : '',
-          dataUrl: safeDataUrl,
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : undefined;
+          const safeDataUrl = file.size <= 2.5 * 1024 * 1024 ? result : undefined;
+
+          const nuovoDoc: DocumentoArchivio = {
+            id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            nome: file.name,
+            categoria: categoriaSelezionata,
+            dimensione: file.size,
+            tipoMime: file.type || 'application/octet-stream',
+            dataCaricamento: new Date().toISOString().slice(0, 10),
+            note:
+              file.size > 2.5 * 1024 * 1024
+                ? 'File > 2,5 MB: indicizzato nel fascicolo (ricaricare per download diretto)'
+                : '',
+            dataUrl: safeDataUrl,
+            collegamento: collegamentoText,
+          };
+
+          setDocumenti((prev) => [nuovoDoc, ...prev]);
         };
-
-        setDocumenti((prev) => [nuovoDoc, ...prev]);
-      };
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      })();
     });
   };
 
@@ -164,7 +189,8 @@ export function CassettoDocumentale() {
       !q ||
       d.nome.toLowerCase().includes(q) ||
       d.note.toLowerCase().includes(q) ||
-      d.categoria.toLowerCase().includes(q);
+      d.categoria.toLowerCase().includes(q) ||
+      (d.collegamento ?? '').toLowerCase().includes(q);
     return matchCat && matchText;
   });
 
@@ -176,7 +202,7 @@ export function CassettoDocumentale() {
             Cassetto Documentale Commessa
           </h1>
           <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
-            Fascicolo digitale, visure, planimetrie, titoli legittimanti ed elaborati SUET. Commessa:{' '}
+            Fascicolo digitale collegato ad Audit &amp; RAI, Abachi e Computo. Commessa:{' '}
             <strong className="text-zinc-950">{commessa.codice}</strong>
           </p>
         </div>
@@ -199,7 +225,9 @@ export function CassettoDocumentale() {
             <span className="font-semibold text-zinc-700">Categoria destinazione:</span>
             <select
               value={categoriaSelezionata}
-              onChange={(e) => setCategoriaSelezionata(e.target.value as CategoriaDocumento)}
+              onChange={(e) =>
+                setCategoriaSelezionata(e.target.value as CategoriaDocumento)
+              }
               className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-zinc-950 focus:outline-none focus:border-zinc-950"
             >
               {CATEGORIE.map((cat) => (
@@ -244,9 +272,15 @@ export function CassettoDocumentale() {
             Trascina qui i file della commessa oppure clicca per selezionarli
           </p>
           <p className="text-[11px] text-zinc-600 mt-1 font-mono">
-            PDF, DWG, DXF, XLSX, DOCX, JPG/PNG · Archiviazione associata a {commessa.codice}
+            PDF, DWG, DXF, XLSX, DOCX, JPG/PNG · Sincronizzati con commessa {commessa.codice}
           </p>
         </div>
+
+        {esitoCollegamento && (
+          <p className="text-xs font-mono text-emerald-900 bg-emerald-50 border border-emerald-300 rounded-lg px-3 py-2">
+            {esitoCollegamento}
+          </p>
+        )}
 
         {erroreStorage && (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
@@ -300,11 +334,20 @@ export function CassettoDocumentale() {
                   <FileText size={16} className="text-zinc-700 shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-zinc-950 truncate">{doc.nome}</span>
+                      <span className="font-semibold text-zinc-950 truncate">
+                        {doc.nome}
+                      </span>
                       <span className="font-mono text-[10px] text-zinc-500 tabular-nums">
                         {formatBytes(doc.dimensione)} · {doc.dataCaricamento}
                       </span>
                     </div>
+
+                    {doc.collegamento && (
+                      <div className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-800">
+                        <Link2 size={11} />
+                        <span>{doc.collegamento}</span>
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded bg-zinc-100 border border-zinc-300 px-1.5 py-0.5 text-[10px] font-mono text-zinc-800">

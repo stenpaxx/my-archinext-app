@@ -92,7 +92,9 @@ export function Sidebar({
   const handleSelect = (section: SectionId) => {
     onSelectSection(section);
     if (window.innerWidth < 1024) {
-      onCloseMobile?.();
+      window.setTimeout(() => {
+        onCloseMobile?.();
+      }, 60);
     }
   };
 
@@ -117,7 +119,7 @@ export function Sidebar({
   };
 
   const sidebarContent = (
-    <div className="h-full bg-zinc-950 text-zinc-100 border-r border-zinc-800 flex flex-col justify-between select-none overflow-y-auto">
+    <div className="h-full bg-zinc-950 text-zinc-100 border-r border-zinc-800 flex flex-col justify-between select-none overflow-y-auto overscroll-contain touch-manipulation">
       <div className="p-4 space-y-4">
         <div className="pb-3 border-b border-zinc-800 flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -359,21 +361,20 @@ export function Sidebar({
   return (
     <>
       {!desktopCollapsed && (
-        <aside className="hidden lg:block w-64 h-screen sticky top-0 shrink-0">
+        <aside className="hidden lg:block w-64 h-dvh sticky top-0 shrink-0">
           {sidebarContent}
         </aside>
       )}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div
-            role="button"
-            tabIndex={-1}
+        <div className="fixed inset-0 z-50 lg:hidden flex h-dvh w-screen overflow-hidden">
+          <button
+            type="button"
             aria-label="Chiudi sidebar"
-            onClick={onCloseMobile}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px]"
+            onClick={() => onCloseMobile?.()}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] cursor-default"
           />
-          <aside className="relative z-50 w-72 max-w-[85vw] h-full shadow-2xl">
+          <aside className="relative z-50 w-72 max-w-[85vw] h-full overscroll-contain touch-manipulation shadow-2xl">
             {sidebarContent}
           </aside>
         </div>
