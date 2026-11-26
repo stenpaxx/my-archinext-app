@@ -538,12 +538,15 @@ export function DueDiligence() {
   const particellaLabel = commessa.particella || '—';
   const subLabel = commessa.subalterno || '—';
 
+  const latStr = coords[0].toFixed(6);
+  const lonStr = coords[1].toFixed(6);
   const indirizzoPerFormaps = (commessa.indirizzo || commessa.titolo || 'Roma').trim();
-  const formapsHref = `https://www.formaps.it/?q=${encodeURIComponent(indirizzoPerFormaps)}&lat=${coords[0].toFixed(6)}&lon=${coords[1].toFixed(6)}`;
+  const formapsHref = `https://www.formaps.it/?lat=${latStr}&lon=${lonStr}&q=${encodeURIComponent(indirizzoPerFormaps)}`;
 
   const handleOpenFormaps = () => {
+    const infoProgetto = `${indirizzoPerFormaps} (${latStr}, ${lonStr})`;
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(indirizzoPerFormaps).catch(() => {});
+      navigator.clipboard.writeText(infoProgetto).catch(() => {});
     }
     setFormapsCopied(true);
     window.setTimeout(() => setFormapsCopied(false), 3000);
@@ -717,13 +720,13 @@ export function DueDiligence() {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={handleOpenFormaps}
-                  title={`Apri FORMapS e copia "${indirizzoPerFormaps}" negli appunti`}
+                  title={`Apri FORMapS sulle coordinate del progetto (${latStr}°N, ${lonStr}°E)`}
                   className="absolute top-2.5 right-2.5 z-[400] inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 font-mono text-[11px] font-bold tracking-wide text-white shadow-md hover:bg-zinc-800 transition-colors"
                 >
                   {formapsCopied ? (
                     <>
                       <Check size={12} className="text-emerald-300" />
-                      <span>Indirizzo copiato</span>
+                      <span>Coord. copiate</span>
                     </>
                   ) : (
                     <>
