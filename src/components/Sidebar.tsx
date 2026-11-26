@@ -14,6 +14,14 @@ import {
 import { useStore, type DocumentoCommessa } from '@/lib/store';
 import { STEP_LABELS } from '@/lib/types';
 
+export interface SidebarProps {
+  section?: unknown;
+  onChange?: unknown;
+  onOpenCatalogo?: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
 const DOC_ACCEPT =
   '.dwg,.dxf,.ifc,.pdf,.xlsx,.xls,.docx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
 
@@ -137,7 +145,7 @@ function inferCategoria(fileName: string): DocumentoCommessa['categoria'] {
   return 'Altro';
 }
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const commesse = useStore((s) => s.commesse);
   const attivaId = useStore((s) => s.attivaId);
   const setAttiva = useStore((s) => s.setAttiva);
@@ -226,25 +234,50 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="w-72 shrink-0 bg-zinc-950 text-zinc-100 border-r border-zinc-800 flex flex-col min-h-screen select-none">
+      {mobileOpen && (
+        <div
+          onClick={() => onCloseMobile?.()}
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 shrink-0 bg-zinc-950 text-zinc-100 border-r border-zinc-800 flex flex-col min-h-screen select-none transform transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         {/* Brand */}
-        <div className="px-4 py-4 border-b border-zinc-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0">
-            <FolderKanban size={18} className="text-zinc-200" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-bold tracking-tight text-white truncate">
-                My ARCHINEXT
-              </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-300">
-                RM
-              </span>
+        <div className="px-4 py-4 border-b border-zinc-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0">
+              <FolderKanban size={18} className="text-zinc-200" />
             </div>
-            <p className="font-mono text-[10px] text-zinc-400 truncate mt-0.5">
-              Assistente Tecnico Generativo
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm font-bold tracking-tight text-white truncate">
+                  My ARCHINEXT
+                </span>
+                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-300">
+                  RM
+                </span>
+              </div>
+              <p className="font-mono text-[10px] text-zinc-400 truncate mt-0.5">
+                Assistente Tecnico Generativo
+              </p>
+            </div>
           </div>
+
+          {onCloseMobile && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              aria-label="Chiudi menu"
+              className="lg:hidden p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         {/* Commessa attiva + Cassetto Documentale */}
@@ -276,7 +309,10 @@ export function Sidebar() {
 
           <button
             type="button"
-            onClick={() => setCassettoModalOpen(true)}
+            onClick={() => {
+              onCloseMobile?.();
+              setCassettoModalOpen(true);
+            }}
             className="w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-800 hover:text-white transition-colors"
           >
             <BookOpen size={14} className="text-emerald-400 shrink-0" />
