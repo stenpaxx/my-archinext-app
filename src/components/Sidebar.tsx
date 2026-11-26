@@ -1,452 +1,478 @@
-import {
-  LayoutList, Grid2x2, Code2, Plug, Calculator, FileText,
-  FolderKanban, Plus, Trash2, Check, ChevronDown, FileUp, X, BookOpen,
-} from 'lucide-react';
 import { useState } from 'react';
-import { useStore } from '@/lib/store';
-import type { Commessa, Vano, VoceComputo } from '@/lib/types';
+import {
+  BookOpen,
+  Plus,
+  CheckCircle2,
+  Circle,
+  FolderKanban,
+  FileText,
+  Trash2,
+  X,
+  Upload,
+  Download,
+} from 'lucide-react';
+import { useStore, type DocumentoCommessa } from '@/lib/store';
+import { STEP_LABELS } from '@/lib/types';
 
-export type SectionId = 'due-diligence' | 'rai' | 'lisp' | 'impianti' | 'computo' | 'atti';
-
-export const SECTIONS: { id: SectionId; label: string; icon: typeof LayoutList }[] = [
-  { id: 'due-diligence', label: '1. Due Diligence & NTA Roma', icon: LayoutList },
-  { id: 'rai', label: '2. Audit Distributivo & RAI', icon: Grid2x2 },
-  { id: 'lisp', label: '3. Automazione CAD (AutoLISP)', icon: Code2 },
-  { id: 'impianti', label: '4. Impianti (CEI 64-8 & Idrico)', icon: Plug },
-  { id: 'computo', label: '5. Abachi & Computo (Lazio + Excel)', icon: Calculator },
-  { id: 'atti', label: '6. Atti SUET, FIR & L.132/2025', icon: FileText },
-];
+const DOC_ACCEPT =
+  '.dwg,.dxf,.ifc,.pdf,.xlsx,.xls,.docx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
 
 const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false, false];
+const EMPTY_DOCS: DocumentoCommessa[] = [];
 
-interface Props {
-  section: SectionId;
-  onChange: (s: SectionId) => void;
-  onOpenCatalogo: () => void;
-  mobileOpen?: boolean;
-  onCloseMobile?: () => void;
-}
+const IDB_NAME = 'my_archinext_docs_db';
+const IDB_VERSION = 1;
+const IDB_STORE = 'documenti_binari';
 
-function parseSynapsPayload(raw: string): {
-  commessaPatch?: Partial<Commessa>;
-  vani?: Omit<Vano, 'id'>[];
-  voci?: Omit<VoceComputo, 'id'>[];
-  error?: string;
-} {
-  const trimmed = raw.trim();
-  if (!trimmed) return { error: 'Incolla o carica un output di Synaps.app prima di procedere.' };
-
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      const source = Array.isArray(parsed) ? { vani: parsed } : parsed;
-
-      const commessaPatch: Partial<Commessa> = {};
-      if (typeof source.titolo === 'string') commessaPatch.titolo = source.titolo;
-      if (typeof source.indirizzo === 'string') commessaPatch.indirizzo = source.indirizzo;
-      if (typeof source.municipio === 'string') commessaPatch.municipio = source.municipio;
-      if (typeof source.foglio === 'string') commessaPatch.foglio = source.foglio;
-      if (typeof source.particella === 'string') commessaPatch.particella = source.particella;
-      if (typeof source.subalterno === 'string') commessaPatch.subalterno = source.subalterno;
-      if (typeof source.tessutoPRG === 'string') commessaPatch.tessutoPRG = source.tessutoPRG;
-
-      const rawVani = Array.isArray(source.vani)
-        ? source.vani
-        : Array.isArray(source.ambienti)
-          ? source.ambienti
-          : Array.isArray(source.rooms)
-            ? source.rooms
-            : [];
-
-      const vani: Omit<Vano, 'id'>[] = rawVani.map((item: Record<string, unknown>, idx: number) => ({
-        nome: String(item.nome ?? item.name ?? item.ambiente ?? `Vano ${idx + 1}`),
-        destinazione: String(item.destinazione ?? item.uso ?? 'Soggiorno'),
-        superficie: Number(item.superficie ?? item.mq ?? item.area ?? 0) || 0,
-        superfFinestrata: Number(item.superfFinestrata ?? item.finestra ?? item.aeroilluminante ?? 0) || 0,
-        altezzaMedia: Number(item.altezzaMedia ?? item.altezza ?? item.h ?? 2.7) || 2.7,
-        vmc: Boolean(item.vmc ?? false),
-      }));
-
-      const rawVoci = Array.isArray(source.voci)
-        ? source.voci
-        : Array.isArray(source.computo)
-          ? source.computo
-          : [];
-
-      const voci: Omit<VoceComputo, 'id'>[] = rawVoci.map((item: Record<string, unknown>, idx: number) => ({
-        codicePrezzario: String(item.codicePrezzario ?? item.codice ?? `SYN-${String(idx + 1).padStart(2, '0')}`),
-        wbs: String(item.wbs ?? item.categoria ?? 'Synaps'),
-        descrizione: String(item.descrizione ?? item.voce ?? 'Voce da Synaps.app'),
-        um: String(item.um ?? item.unitaMisura ?? 'mq'),
-        quantita: Number(item.quantita ?? item.qta ?? 0) || 0,
-        prezzoUnitario: Number(item.prezzoUnitario ?? item.prezzo ?? 0) || 0,
-        oneriSicurezza: Boolean(item.oneriSicurezza ?? false),
-      }));
-
-      return { commessaPatch, vani, voci };
-    } catch {
-      return { error: 'JSON non valido: controlla la sintassi dell’esportazione Synaps.app.' };
+function openDocsDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !('indexedDB' in window)) {
+      reject(new Error('IndexedDB non disponibile'));
+      return;
     }
-  }
 
-  const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length > 0) {
-    const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-    const vani: Omit<Vano, 'id'>[] = [];
-    for (const line of lines) {
-      const cols = line.split(sep).map((c) => c.trim());
-      if (cols.length >= 2 && !Number.isNaN(Number(cols[2]?.replace(',', '.')))) {
-        vani.push({
-          nome: cols[0] || `Vano ${vani.length + 1}`,
-          destinazione: cols[1] || 'Soggiorno',
-          superficie: Number((cols[2] || '0').replace(',', '.')) || 0,
-          superfFinestrata: Number((cols[3] || '0').replace(',', '.')) || 0,
-          altezzaMedia: Number((cols[4] || '2.7').replace(',', '.')) || 2.7,
-          vmc: false,
-        });
+    const request = window.indexedDB.open(IDB_NAME, IDB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'id' });
       }
-    }
-    if (vani.length > 0) {
-      return { vani };
-    }
-  }
+    };
 
-  return {
-    error: 'Formato non riconosciuto. Usa JSON (con "vani"/"voci") oppure righe CSV/TSV con superficie numerica.',
-  };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Errore apertura IndexedDB'));
+  });
 }
 
-export function Sidebar({
-  section,
-  onChange,
-  onOpenCatalogo,
-  mobileOpen = false,
-  onCloseMobile,
-}: Props) {
+async function salvaFileBinario(id: string, file: File): Promise<void> {
+  const db = await openDocsDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    store.put({
+      id,
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      blob: file,
+    });
+
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error ?? new Error('Errore salvataggio file su IndexedDB'));
+    };
+  });
+}
+
+async function leggiFileBinario(
+  id: string
+): Promise<{ blob: Blob; name: string; mimeType: string } | null> {
+  try {
+    const db = await openDocsDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(id);
+
+      req.onsuccess = () => {
+        const res = req.result as
+          | { id: string; name: string; mimeType: string; blob: Blob }
+          | undefined;
+        db.close();
+        if (res && res.blob) {
+          resolve({ blob: res.blob, name: res.name, mimeType: res.mimeType });
+        } else {
+          resolve(null);
+        }
+      };
+
+      req.onerror = () => {
+        db.close();
+        reject(req.error ?? new Error('Errore lettura file da IndexedDB'));
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function eliminaFileBinario(id: string): Promise<void> {
+  try {
+    const db = await openDocsDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.delete(id);
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error ?? new Error('Errore eliminazione file da IndexedDB'));
+      };
+    });
+  } catch {
+    // ignora errori se il record non esiste
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(2)} MB`;
+}
+
+function inferCategoria(fileName: string): DocumentoCommessa['categoria'] {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  if (['dwg', 'dxf', 'ifc'].includes(ext)) return 'Elaborati CAD / BIM';
+  if (['xlsx', 'xls', 'docx'].includes(ext)) return 'Relazioni / Computi';
+  if (ext === 'pdf') return 'Catasto / Titoli';
+  return 'Altro';
+}
+
+export function Sidebar() {
   const commesse = useStore((s) => s.commesse);
   const attivaId = useStore((s) => s.attivaId);
   const setAttiva = useStore((s) => s.setAttiva);
   const creaCommessa = useStore((s) => s.creaCommessa);
-  const eliminaCommessa = useStore((s) => s.eliminaCommessa);
-  const aggiornaCommessa = useStore((s) => s.aggiornaCommessa);
-  const steps = useStore((s) => (s.attivaId ? s.steps[s.attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
-  const [open, setOpen] = useState(false);
-  const [synapsOpen, setSynapsOpen] = useState(false);
-  const [synapsInput, setSynapsInput] = useState('');
-  const [synapsFeedback, setSynapsFeedback] = useState<string | null>(null);
+  const steps = useStore((s) => (attivaId ? s.steps[attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
+  const toggleStep = useStore((s) => s.toggleStep);
 
-  const attiva = commesse.find((c) => c.id === attivaId);
+  const documenti = useStore((s) =>
+    attivaId ? s.documenti?.[attivaId] ?? EMPTY_DOCS : EMPTY_DOCS
+  );
+  const aggiungiDocumenti = useStore((s) => s.aggiungiDocumenti);
+  const rimuoviDocumento = useStore((s) => s.rimuoviDocumento);
+
+  const [cassettoModalOpen, setCassettoModalOpen] = useState(false);
+  const [categoriaUpload, setCategoriaUpload] =
+    useState<DocumentoCommessa['categoria']>('Catasto / Titoli');
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('Tutte');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const commessaAttiva = commesse.find((c) => c.id === attivaId) ?? commesse[0];
+  const currentId = commessaAttiva?.id ?? '';
   const pct = Math.round((steps.filter(Boolean).length / 7) * 100);
 
-  const handleSelectSection = (id: SectionId) => {
-    onChange(id);
-    onCloseMobile?.();
-  };
-
-  const handleNew = () => {
-    const n = commesse.length + 1;
-    creaCommessa({
-      codice: `${new Date().getFullYear()}-${String(n).padStart(3, '0')}`,
-      titolo: 'Nuova commessa',
-      indirizzo: '',
-      municipio: 'Municipio I',
-      foglio: '',
-      particella: '',
-      subalterno: '',
-      categoriaCatastale: 'A/2',
-      rendita: '',
-      tipologia: 'Manutenzione Straordinaria CILA',
-      tessutoPRG: 'T1',
-      cartaQualita: false,
-      vincoloSoprintendenza: false,
-    });
-    setOpen(false);
-    onCloseMobile?.();
-  };
-
-  const handleSynapsFile = async (file: File) => {
-    const text = await file.text();
-    setSynapsInput(text);
-    setSynapsFeedback(null);
-  };
-
-  const handleApplySynaps = () => {
-    if (!attivaId) {
-      setSynapsFeedback('Crea o seleziona prima una commessa attiva.');
-      return;
-    }
-    const res = parseSynapsPayload(synapsInput);
-    if (res.error) {
-      setSynapsFeedback(res.error);
-      return;
-    }
-
-    if (res.commessaPatch && Object.keys(res.commessaPatch).length > 0) {
-      aggiornaCommessa(attivaId, res.commessaPatch);
-    }
-
-    useStore.setState((prev) => {
-      const existingVani = prev.vani[attivaId] ?? [];
-      const existingVoci = prev.voci[attivaId] ?? [];
-      const nextVani =
-        res.vani && res.vani.length > 0
-          ? [
-              ...existingVani,
-              ...res.vani.map((v, i) => ({
-                ...v,
-                id: `${attivaId}-syn-v-${Date.now()}-${i}`,
-              })),
-            ]
-          : existingVani;
-
-      const nextVoci =
-        res.voci && res.voci.length > 0
-          ? [
-              ...existingVoci,
-              ...res.voci.map((vc, i) => ({
-                ...vc,
-                id: `${attivaId}-syn-c-${Date.now()}-${i}`,
-              })),
-            ]
-          : existingVoci;
-
-      return {
-        vani: { ...prev.vani, [attivaId]: nextVani },
-        voci: { ...prev.voci, [attivaId]: nextVoci },
-      };
+  const handleFilesUpload = async (
+    fileList: FileList | null,
+    forcedCategoria?: DocumentoCommessa['categoria']
+  ) => {
+    if (!fileList || fileList.length === 0 || !currentId) return;
+    const now = new Date().toLocaleDateString('it-IT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
 
-    const nVani = res.vani?.length ?? 0;
-    const nVoci = res.voci?.length ?? 0;
-    setSynapsFeedback(`Importati ${nVani} vani e ${nVoci} voci nella commessa attiva.`);
-    setTimeout(() => {
-      setSynapsOpen(false);
-      setSynapsFeedback(null);
-    }, 1100);
+    const nuoviDocs: DocumentoCommessa[] = [];
+
+    for (const f of Array.from(fileList)) {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await salvaFileBinario(id, f);
+
+      nuoviDocs.push({
+        id,
+        nome: f.name,
+        categoria: forcedCategoria ?? inferCategoria(f.name),
+        dimensione: f.size,
+        dataCaricamento: now,
+      });
+    }
+
+    if (nuoviDocs.length > 0) {
+      aggiungiDocumenti(currentId, nuoviDocs);
+    }
   };
+
+  const handleDownload = async (doc: DocumentoCommessa) => {
+    setDownloadingId(doc.id);
+    try {
+      const stored = await leggiFileBinario(doc.id);
+      if (stored?.blob) {
+        const url = URL.createObjectURL(stored.blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = stored.name || doc.nome;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!currentId) return;
+    await eliminaFileBinario(docId);
+    rimuoviDocumento(currentId, docId);
+  };
+
+  const documentiFiltrati =
+    filtroCategoria === 'Tutte'
+      ? documenti
+      : documenti.filter((d) => d.categoria === filtroCategoria);
 
   return (
     <>
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-xs lg:hidden"
-          onClick={() => onCloseMobile?.()}
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 shrink-0 h-dvh lg:h-screen lg:sticky lg:top-0 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-200 ease-out ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-      >
-        <div className="px-5 py-4 lg:py-5 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded bg-sky-600 flex items-center justify-center shrink-0">
-              <FolderKanban size={18} className="text-white" />
-            </div>
-            <div className="leading-tight min-w-0">
-              <p className="text-white text-sm font-semibold truncate">My Archinext</p>
-              <p className="text-[11px] text-slate-500 truncate">Assistente Tecnico Generativo</p>
-            </div>
+      <aside className="w-72 shrink-0 bg-zinc-950 text-zinc-100 border-r border-zinc-800 flex flex-col min-h-screen select-none">
+        {/* Brand */}
+        <div className="px-4 py-4 border-b border-zinc-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0">
+            <FolderKanban size={18} className="text-zinc-200" />
           </div>
-          <button
-            type="button"
-            onClick={() => onCloseMobile?.()}
-            aria-label="Chiudi menu"
-            className="lg:hidden text-slate-400 hover:text-white p-1.5 rounded"
-          >
-            <X size={18} />
-          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-bold tracking-tight text-white truncate">
+                My ARCHINEXT
+              </span>
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-300">
+                RM
+              </span>
+            </div>
+            <p className="font-mono text-[10px] text-zinc-400 truncate mt-0.5">
+              Assistente Tecnico Generativo
+            </p>
+          </div>
         </div>
 
-        <div className="px-4 py-4 border-b border-slate-800 relative">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <p className="text-[11px] uppercase tracking-wider text-slate-500">Commessa Attiva</p>
-            <button
-              type="button"
-              onClick={handleNew}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 transition-colors"
-            >
-              <Plus size={12} /> Nuova commessa
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="w-full text-left bg-slate-800/70 hover:bg-slate-800 rounded px-3 py-2.5 flex items-center justify-between gap-2 transition-colors"
-          >
-            <span className="min-w-0">
-              <span className="block text-xs font-mono text-sky-400">{attiva?.codice ?? '—'}</span>
-              <span className="block text-[13px] text-white truncate">{attiva?.titolo ?? 'Nessuna'}</span>
+        {/* Commessa attiva + Cassetto Documentale */}
+        <div className="p-4 border-b border-zinc-800 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Commessa Attiva
             </span>
-            <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
-
-          {open && (
-            <div className="absolute left-4 right-4 mt-1 bg-slate-800 border border-slate-700 rounded shadow-xl z-20 py-1 max-h-72 overflow-y-auto">
-              {commesse.map((c) => {
-                const st = useStore.getState().steps[c.id] ?? EMPTY_STEPS;
-                const p = Math.round((st.filter(Boolean).length / 7) * 100);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => { setAttiva(c.id); setOpen(false); onCloseMobile?.(); }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-700/70 flex items-center justify-between gap-2 group"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-mono text-sky-400">{c.codice}</span>
-                      <span className="block text-[13px] text-slate-200 truncate">{c.titolo}</span>
-                      <span className="block mt-1 h-1 w-full bg-slate-700 rounded-full overflow-hidden">
-                        <span className="block h-full bg-sky-500" style={{ width: `${p}%` }} />
-                      </span>
-                    </span>
-                    {c.id === attivaId ? (
-                      <Check size={14} className="shrink-0 text-emerald-400" />
-                    ) : (
-                      <Trash2
-                        size={13}
-                        className="shrink-0 text-slate-600 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`Eliminare la commessa "${c.codice}"?`)) eliminaCommessa(c.id);
-                        }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={handleNew}
-                className="w-full text-left px-3 py-2.5 text-[13px] text-sky-400 hover:bg-slate-700/70 flex items-center gap-2 border-t border-slate-700 mt-1"
-              >
-                <Plus size={14} /> Nuova commessa
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => { setSynapsFeedback(null); setSynapsOpen(true); }}
-            className="mt-2.5 w-full py-1.5 px-3 rounded border border-slate-700 hover:border-sky-500/60 bg-slate-800/40 hover:bg-slate-800 text-xs text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
-          >
-            <FileUp size={13} className="text-sky-400" />
-            <span>Importa output Synaps.app</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { onOpenCatalogo(); onCloseMobile?.(); }}
-            className="mt-2 w-full py-1.5 px-3 rounded border border-slate-700 hover:border-emerald-500/60 bg-slate-800/40 hover:bg-slate-800 text-xs text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
-          >
-            <BookOpen size={13} className="text-emerald-400" />
-            <span>Cassetto Documentale</span>
-          </button>
-        </div>
-
-        <div className="px-4 py-3 border-b border-slate-800">
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-            <span>Avanzamento 7 Step</span>
-            <span className="font-mono text-sky-400">{pct}%</span>
-          </div>
-          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-sky-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-
-        <nav className="flex-1 py-4 overflow-y-auto">
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
             <button
-              key={id}
               type="button"
-              onClick={() => handleSelectSection(id)}
-              className={`w-full text-left pl-5 pr-4 py-3 flex items-center gap-3 text-[13px] leading-snug transition-colors border-l-2 ${
-                section === id
-                  ? 'bg-slate-800 text-white border-sky-500'
-                  : 'border-transparent hover:bg-slate-800/50 hover:text-slate-200'
-              }`}
+              onClick={() => creaCommessa()}
+              className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-zinc-200 hover:text-white transition-colors"
             >
-              <Icon size={16} className={section === id ? 'text-sky-400' : 'text-slate-500'} />
-              <span className="flex-1">{label}</span>
+              <Plus size={12} /> Nuova
             </button>
-          ))}
-        </nav>
+          </div>
 
-        <div className="px-5 py-4 border-t border-slate-800">
-          <p className="text-[10px] text-slate-600 leading-relaxed">
-            Strumento di supporto tecnico. Verificare sempre la normativa vigente e i requisiti del Regolamento Edilizio di Roma Capitale.
-          </p>
+          <select
+            value={currentId}
+            onChange={(e) => setAttiva(e.target.value)}
+            className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-zinc-400"
+          >
+            {commesse.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.codice} — {c.titolo}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => setCassettoModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-800 hover:text-white transition-colors"
+          >
+            <BookOpen size={14} className="text-emerald-400 shrink-0" />
+            <span>Cassetto Documentale</span>
+            {documenti.length > 0 && (
+              <span className="rounded-full bg-emerald-950 border border-emerald-700 px-1.5 py-0.2 font-mono text-[10px] text-emerald-300">
+                {documenti.length}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Avanzamento 7 step */}
+        <div className="p-4 border-b border-zinc-800">
+          <div className="flex items-center justify-between font-mono text-xs mb-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Avanzamento 7 Step
+            </span>
+            <span className="font-bold text-white tabular-nums">{pct}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+            <div
+              className="h-full bg-white rounded-full transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Elenco 7 step */}
+        <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
+          {STEP_LABELS.map((label, idx) => {
+            const done = Boolean(steps[idx]);
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => currentId && toggleStep(currentId, idx)}
+                className={`w-full text-left flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs transition-colors ${
+                  idx === 0
+                    ? 'bg-zinc-800/90 text-white font-semibold border border-zinc-700'
+                    : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+                }`}
+              >
+                {done ? (
+                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                ) : (
+                  <Circle size={14} className="text-zinc-500 shrink-0" />
+                )}
+                <span className="truncate">
+                  {idx + 1}. {label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
       </aside>
 
-      {synapsOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white text-slate-900 rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90dvh] flex flex-col">
-            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <FileUp size={16} className="text-sky-400" />
-                <h2 className="text-sm font-semibold">Importa Output Synaps.app (Esperimenti)</h2>
+      {/* Modale Cassetto Documentale */}
+      {cassettoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-zinc-950 w-full max-w-2xl rounded-2xl border border-zinc-300 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="bg-zinc-950 text-white px-5 py-4 flex items-center justify-between border-b border-zinc-800">
+              <div>
+                <p className="text-[11px] font-mono text-zinc-400">
+                  COMMESSA {commessaAttiva?.codice}
+                </p>
+                <h2 className="text-base font-bold">
+                  Cassetto Documentale — {commessaAttiva?.titolo}
+                </h2>
               </div>
               <button
                 type="button"
-                onClick={() => setSynapsOpen(false)}
-                className="text-slate-400 hover:text-white p-1"
+                onClick={() => setCassettoModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-                <span>
-                  Commessa di destinazione: <strong className="text-slate-900">{attiva?.codice} — {attiva?.titolo}</strong>
-                </span>
-                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium cursor-pointer transition-colors">
-                  <FileUp size={13} /> Carica file (.json / .csv / .txt)
+            {/* Area caricamento */}
+            <div className="p-5 bg-zinc-100 border-b border-zinc-300 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-zinc-800">
+                  <span>Categoria upload:</span>
+                  <select
+                    value={categoriaUpload}
+                    onChange={(e) =>
+                      setCategoriaUpload(e.target.value as DocumentoCommessa['categoria'])
+                    }
+                    className="bg-white border border-zinc-400 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-950"
+                  >
+                    <option value="Catasto / Titoli">Catasto / Titoli</option>
+                    <option value="Elaborati CAD / BIM">Elaborati CAD / BIM</option>
+                    <option value="Relazioni / Computi">Relazioni / Computi</option>
+                    <option value="Altro">Altro</option>
+                  </select>
+                </label>
+
+                <label className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 cursor-pointer transition-colors">
+                  <Upload size={14} />
+                  <span>Carica documenti (multiplo)</span>
                   <input
                     type="file"
-                    accept=".json,.csv,.tsv,.txt"
+                    multiple
+                    accept={DOC_ACCEPT}
                     className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleSynapsFile(f);
+                    onChange={async (e) => {
+                      await handleFilesUpload(e.target.files, categoriaUpload);
+                      e.currentTarget.value = '';
                     }}
                   />
                 </label>
               </div>
 
-              <textarea
-                rows={8}
-                value={synapsInput}
-                onChange={(e) => setSynapsInput(e.target.value)}
-                placeholder={'Incolla qui l’output di Synaps.app (JSON con "vani"/"voci" oppure CSV: Nome;Destinazione;Superficie;Finestra;Altezza)...'}
-                className="w-full font-mono text-xs bg-slate-50 border border-slate-300 rounded-lg p-3 focus:outline-none focus:border-sky-600"
-              />
-
-              {synapsFeedback && (
-                <div className="text-xs px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-800">
-                  {synapsFeedback}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <p className="text-[11px] font-mono text-zinc-600">
+                  Persistenza locale attiva (IndexedDB + localStorage) · Formati: PDF, DWG, DXF, IFC, XLSX, DOCX, PNG, JPG.
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      'Tutte',
+                      'Catasto / Titoli',
+                      'Elaborati CAD / BIM',
+                      'Relazioni / Computi',
+                      'Altro',
+                    ] as const
+                  ).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setFiltroCategoria(cat)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
+                        filtroCategoria === cat
+                          ? 'bg-zinc-950 text-white border-zinc-950'
+                          : 'bg-white text-zinc-700 border-zinc-300 hover:border-zinc-950'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
                 </div>
-              )}
-
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setSynapsOpen(false)}
-                  className="px-3.5 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  Chiudi
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplySynaps}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
-                >
-                  Carica nella commessa
-                </button>
               </div>
+            </div>
+
+            {/* Lista documenti */}
+            <div className="p-5 overflow-y-auto flex-1">
+              {documentiFiltrati.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-zinc-300 rounded-xl bg-zinc-50">
+                  <p className="text-sm font-semibold text-zinc-800">
+                    Nessun documento in questa vista
+                  </p>
+                  <p className="text-xs text-zinc-600 mt-1">
+                    Clicca su &ldquo;Carica documenti (multiplo)&rdquo; qui sopra per popolare la commessa.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-zinc-200 border border-zinc-200 rounded-xl overflow-hidden">
+                  {documentiFiltrati.map((doc) => (
+                    <li
+                      key={doc.id}
+                      className="px-4 py-3 flex items-center justify-between gap-3 bg-white hover:bg-zinc-50"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText size={16} className="text-zinc-700 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-zinc-950 truncate">{doc.nome}</p>
+                          <p className="text-[11px] font-mono text-zinc-600 mt-0.5">
+                            {doc.categoria} · {formatBytes(doc.dimensione)} · {doc.dataCaricamento}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={downloadingId === doc.id}
+                          onClick={() => handleDownload(doc)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-zinc-300 text-[11px] font-semibold text-zinc-800 hover:border-zinc-950 disabled:opacity-50"
+                        >
+                          <Download size={12} />
+                          <span>{downloadingId === doc.id ? 'Attendi...' : 'Scarica'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDoc(doc.id)}
+                          className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200"
+                          title="Elimina documento"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>
