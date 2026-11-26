@@ -61,7 +61,8 @@ export function Sidebar({
   desktopCollapsed = false,
   onToggleDesktopCollapse,
 }: SidebarProps) {
-  const commesse = useStore((s) => s.commesse);
+  const commesse = useStore((s) => s.commesse ?? []);
+  const attivaId = useStore((s) => s.attivaId);
   const selezionaCommessa = useStore((s) => s.selezionaCommessa);
   const creaCommessa = useStore((s) => s.creaCommessa);
   const rawSteps = useStore((s) => (s.attivaId ? s.steps?.[s.attivaId] : undefined));
@@ -90,7 +91,9 @@ export function Sidebar({
 
   const handleSelect = (section: SectionId) => {
     onSelectSection(section);
-    onCloseMobile?.();
+    if (window.innerWidth < 1024) {
+      onCloseMobile?.();
+    }
   };
 
   const handleSidebarMenuClick = () => {
@@ -107,7 +110,7 @@ export function Sidebar({
     if (!titoloPulito || typeof creaCommessa !== 'function') return;
     creaCommessa({
       titolo: titoloPulito,
-      indirizzo: nuovoIndirizzo.trim() || 'Roma Capitale',
+      indirizzo: nuovoIndirizzo.trim() || 'Via del Boschetto, 72, 00184 Roma RM',
     });
     setNuovoTitolo('');
     setNuovaAperta(false);
@@ -164,8 +167,12 @@ export function Sidebar({
 
           <select
             id="sidebar-commessa-select"
-            value={commessa?.id ?? ''}
-            onChange={(e) => selezionaCommessa(e.target.value)}
+            value={commessa?.id ?? attivaId ?? ''}
+            onChange={(e) => {
+              if (typeof selezionaCommessa === 'function') {
+                selezionaCommessa(e.target.value);
+              }
+            }}
             className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white"
           >
             {commesse.map((c) => (
@@ -184,7 +191,7 @@ export function Sidebar({
               <div className="flex items-start gap-1.5 text-zinc-300">
                 <MapPin size={12} className="text-zinc-400 shrink-0 mt-0.5" />
                 <span className="line-clamp-2 leading-snug">
-                  {commessa.indirizzo || 'Roma Capitale'}
+                  {commessa.indirizzo || 'Via del Boschetto, 72, 00184 Roma RM'}
                 </span>
               </div>
             </div>
@@ -359,13 +366,14 @@ export function Sidebar({
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={-1}
             aria-label="Chiudi sidebar"
             onClick={onCloseMobile}
-            className="fixed inset-0 bg-black/60 backdrop-blur-[1px]"
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px]"
           />
-          <aside className="relative z-10 w-72 max-w-[85vw] h-full shadow-2xl">
+          <aside className="relative z-50 w-72 max-w-[85vw] h-full shadow-2xl">
             {sidebarContent}
           </aside>
         </div>

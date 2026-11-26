@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, Save, LogIn, LogOut, Check } from 'lucide-react';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
 import { DueDiligence } from '@/modules/DueDiligence';
@@ -7,7 +7,7 @@ import { Cronoprogramma } from '@/modules/Cronoprogramma';
 import { Bozze } from '@/modules/Bozze';
 import { CassettoDocumentale } from '@/modules/CassettoDocumentale';
 import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
-import { useAttiva } from '@/lib/store';
+import { useAttiva, useStore } from '@/lib/store';
 
 type ModuleMap = Record<string, Record<string, ComponentType | undefined>>;
 
@@ -58,13 +58,22 @@ const ComputoModule = resolveModule(
 
 export function App() {
   const { commessa } = useAttiva();
+  const attivaId = useStore((s) => s.attivaId);
   const [activeSection, setActiveSection] = useState<SectionId>('due-diligence');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('archinext_logged_in') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [savedFeedback, setSavedFeedback] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
-      if (window.innerWidth < 1024) {
+      if (window.innerWidth >= 1024) {
         setMobileMenuOpen(false);
       }
     };
@@ -72,38 +81,52 @@ export function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const handleOpenOrToggleMenu = () => {
-    if (window.innerWidth < 1024) {
-      setMobileMenuOpen(true);
-    } else {
-      setDesktopCollapsed((v) => !v);
+  const handleToggleAuth = () => {
+    setIsLoggedIn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('archinext_logged_in', String(next));
+      } catch {
+        // ignora errori storage
+      }
+      return next;
+    });
+  };
+
+  const handleSave = () => {
+    try {
+      const snapshot = useStore.getState();
+      localStorage.setItem('my-archinext-manual-save', JSON.stringify(snapshot));
+    } catch {
+      // ignora errori storage
     }
+    setSavedFeedback(true);
+    window.setTimeout(() => setSavedFeedback(false), 1800);
   };
 
   const renderSection = () => {
+    const sectionKey = `${attivaId ?? 'default'}-${activeSection}`;
     switch (activeSection) {
       case 'due-diligence':
-        return <DueDiligence />;
+        return <DueDiligence key={sectionKey} />;
       case 'audit-rai':
-        return <AuditRAIModule />;
+        return <AuditRAIModule key={sectionKey} />;
       case 'abachi':
-        return <AbachiModule />;
+        return <AbachiModule key={sectionKey} />;
       case 'computo':
-        return <ComputoModule />;
+        return <ComputoModule key={sectionKey} />;
       case 'cronoprogramma':
-        return <Cronoprogramma />;
+        return <Cronoprogramma key={sectionKey} />;
       case 'bozze':
-        return <Bozze />;
+        return <Bozze key={sectionKey} />;
       case 'documenti':
-        return <CassettoDocumentale />;
+        return <CassettoDocumentale key={sectionKey} />;
       case 'autolisp':
-        return <GeneratoreLisp />;
+        return <GeneratoreLisp key={sectionKey} />;
       default:
-        return <DueDiligence />;
+        return <DueDiligence key={sectionKey} />;
     }
   };
-
-  const showTopTrigger = desktopCollapsed;
 
   return (
     <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-zinc-100 text-zinc-950 flex flex-col lg:flex-row">
@@ -117,47 +140,62 @@ export function App() {
       />
 
       <div className="flex-1 min-w-0 lg:h-screen lg:overflow-y-auto">
-        <div className="lg:hidden sticky top-0 z-20 bg-zinc-950 text-white border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-            <span className="text-xs font-mono font-bold tracking-tight truncate">
-              MY ARCHINEXT
-            </span>
-            {commessa && (
-              <span className="text-[11px] font-mono text-zinc-400 truncate">
-                · {commessa.codice}
-              </span>
+        <header className="sticky top-0 z-20 bg-zinc-950 lg:bg-zinc-100/95 text-white lg:text-zinc-950 backdrop-blur-xs border-b border-zinc-800 lg:border-zinc-200 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {!mobileMenuOpen && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Apri menu"
+                className="lg:hidden inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-mono font-bold text-zinc-950 hover:bg-zinc-200 transition-colors shrink-0"
+              >
+                <Menu size={14} className="text-zinc-950" />
+                <span>Menu</span>
+              </button>
             )}
+
+            {desktopCollapsed && (
+              <button
+                type="button"
+                onClick={() => setDesktopCollapsed(false)}
+                aria-label="Apri menu laterale"
+                className="hidden lg:inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-mono font-bold text-white hover:bg-zinc-800 transition-colors shrink-0"
+              >
+                <Menu size={14} />
+                <span>Menu</span>
+              </button>
+            )}
+
+            <div className="min-w-0 flex-1 truncate text-xs font-mono">
+              <span className="font-bold">
+                {commessa ? `${commessa.codice} — ${commessa.titolo}` : 'MY ARCHINEXT'}
+              </span>
+              {commessa?.indirizzo && (
+                <span className="hidden md:inline text-zinc-500"> · {commessa.indirizzo}</span>
+              )}
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenOrToggleMenu}
-            aria-label="Apri menu"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[11px] font-mono font-bold text-zinc-950 hover:bg-zinc-200 transition-colors shrink-0"
-          >
-            <Menu size={14} className="text-zinc-950" />
-            <span>Menu</span>
-          </button>
-        </div>
-
-        {showTopTrigger && (
-          <div className="hidden lg:flex sticky top-0 z-20 bg-zinc-100/95 backdrop-blur-xs border-b border-zinc-200 px-6 py-2.5 items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setDesktopCollapsed(false)}
-              aria-label="Apri menu laterale"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-mono font-bold text-white hover:bg-zinc-800 transition-colors"
+              onClick={handleSave}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-mono font-bold text-white hover:bg-emerald-500 transition-colors shrink-0"
             >
-              <Menu size={14} />
-              <span>Menu</span>
+              {savedFeedback ? <Check size={13} /> : <Save size={13} />}
+              <span>{savedFeedback ? 'Saved' : 'Save'}</span>
             </button>
 
-            <span className="text-xs font-mono text-zinc-600 truncate">
-              {commessa ? `${commessa.codice} · ${commessa.titolo}` : 'MY ARCHINEXT'}
-            </span>
+            <button
+              type="button"
+              onClick={handleToggleAuth}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-600 lg:border-zinc-300 bg-zinc-900 lg:bg-white px-2.5 py-1.5 text-[11px] font-mono font-bold text-white lg:text-zinc-900 hover:bg-zinc-800 lg:hover:bg-zinc-200 transition-colors shrink-0"
+            >
+              {isLoggedIn ? <LogOut size={13} /> : <LogIn size={13} />}
+              <span>{isLoggedIn ? 'Logout' : 'Login'}</span>
+            </button>
           </div>
-        )}
+        </header>
 
         <div className="mx-auto max-w-[1600px] p-4 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           <main className="xl:col-span-8 min-w-0">{renderSection()}</main>
