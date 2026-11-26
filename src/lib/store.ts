@@ -1,296 +1,162 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AbacoInfissi, AbacoSanitari, Commessa, Vano, VoceComputo } from './types';
-import { PREZZARIO_LAZIO } from '@/data/prezzarioLazio';
-import {
-  fetchCataloghiNormativi,
-  type VoceNtaPrg,
-  type VocePrezzario,
-  type VoceRegolamentoEdilizio,
-} from './cataloghiService';
+import type { Commessa, Vano } from '@/lib/types';
 
-interface State {
-  commesse: Commessa[];
-  attivaId: string | null;
-  vani: Record<string, Vano[]>;
-  voci: Record<string, VoceComputo[]>;
-  infissi: Record<string, AbacoInfissi[]>;
-  sanitari: Record<string, AbacoSanitari[]>;
-  steps: Record<string, boolean[]>;
-  catalogoNta: VoceNtaPrg[];
-  catalogoRegolamento: VoceRegolamentoEdilizio[];
-  catalogoPrezzari: VocePrezzario[];
-  caricaCataloghi: () => Promise<void>;
-  creaCommessa: (c: Omit<Commessa, 'id' | 'createdAt'>) => void;
-  eliminaCommessa: (id: string) => void;
-  setAttiva: (id: string) => void;
-  aggiornaCommessa: (id: string, patch: Partial<Commessa>) => void;
-  aggiungiVano: (commessaId: string) => void;
-  aggiornaVano: (commessaId: string, id: string, patch: Partial<Vano>) => void;
-  eliminaVano: (commessaId: string, id: string) => void;
-  aggiungiVoce: (commessaId: string, v: Omit<VoceComputo, 'id'>) => void;
-  aggiornaVoce: (commessaId: string, id: string, patch: Partial<VoceComputo>) => void;
-  eliminaVoce: (commessaId: string, id: string) => void;
-  aggiungiInfisso: (commessaId: string, v: Omit<AbacoInfissi, 'id'>) => void;
-  aggiornaInfisso: (commessaId: string, id: string, patch: Partial<AbacoInfissi>) => void;
-  eliminaInfisso: (commessaId: string, id: string) => void;
-  aggiungiSanitario: (commessaId: string, v: Omit<AbacoSanitari, 'id'>) => void;
-  aggiornaSanitario: (commessaId: string, id: string, patch: Partial<AbacoSanitari>) => void;
-  eliminaSanitario: (commessaId: string, id: string) => void;
-  toggleStep: (commessaId: string, index: number) => void;
+export interface DocumentoCommessa {
+  id: string;
+  nome: string;
+  categoria: 'Catasto / Titoli' | 'Elaborati CAD / BIM' | 'Relazioni / Computi' | 'Altro';
+  dimensione: number;
+  dataCaricamento: string;
+  dataUrl?: string;
 }
 
-const uid = () => crypto.randomUUID();
+export const EMPTY_VANI: Vano[] = [];
 
-const demoCommessa: Commessa = {
-  id: '00000000-0000-4000-8000-000000000014',
-  codice: '2026-014',
-  titolo: 'Ristrutturazione Appartamento Via del Boschetto - Rione Monti, Roma',
-  indirizzo: 'Via del Boschetto 42, 00184 Roma RM',
-  municipio: 'Municipio I',
-  foglio: '112',
-  particella: '547',
-  subalterno: '7',
-  categoriaCatastale: 'A/2',
-  rendita: '€ 3.842,16',
-  tipologia: 'Ristrutturazione SCIA',
-  tessutoPRG: 'T1 (Città Storica)',
-  cartaQualita: true,
-  vincoloSoprintendenza: true,
-  createdAt: new Date().toISOString(),
-};
-
-const demoVani: Vano[] = [
-  { id: uid(), nome: 'Ingresso', destinazione: 'Corridoio', superficie: 8.5, superfFinestrata: 0, altezzaMedia: 3.1, vmc: false },
-  { id: uid(), nome: 'Soggiorno', destinazione: 'Soggiorno', superficie: 22.4, superfFinestrata: 3.1, altezzaMedia: 3.2, vmc: false },
-  { id: uid(), nome: 'Camera matrimoniale', destinazione: 'Camera matrimoniale', superficie: 14.8, superfFinestrata: 1.9, altezzaMedia: 3.2, vmc: false },
-  { id: uid(), nome: 'Studio (camera singola)', destinazione: 'Camera singola', superficie: 9.2, superfFinestrata: 1.35, altezzaMedia: 3.0, vmc: false },
-  { id: uid(), nome: 'Cucina abitabile', destinazione: 'Cucina abitabile', superficie: 10.6, superfFinestrata: 1.1, altezzaMedia: 3.0, vmc: false },
-  { id: uid(), nome: 'Bagno principale', destinazione: 'Bagno', superficie: 4.8, superfFinestrata: 0, altezzaMedia: 2.6, vmc: true },
-  { id: uid(), nome: 'Bagno secondo (servizio)', destinazione: 'Bagno', superficie: 2.6, superfFinestrata: 0.35, altezzaMedia: 2.5, vmc: false },
+const COMMESSE_INIZIALI: Commessa[] = [
+  {
+    id: 'comm-2026-014',
+    codice: '2026-014',
+    titolo: 'Ristrutturazione Appartamento Via del Boschetto',
+    indirizzo: 'Via del Boschetto, 00184 Roma RM',
+    municipio: 'Municipio I',
+    foglio: '482',
+    particella: '118',
+    subalterno: '14',
+    categoriaCatastale: 'A/2',
+    rendita: '€ 1.480,00',
+    tipologia: 'Manutenzione Straordinaria CILA',
+    tessutoPRG: 'T2',
+    cartaQualita: true,
+    vincoloSoprintendenza: false,
+  },
 ];
 
-const demoVoci: VoceComputo[] = [
-  { id: uid(), codicePrezzario: 'L1.A.02.010', wbs: 'Demolizioni', descrizione: 'Demolizione tramezzi in laterizio sp. 12 cm con doppio gessato, incluso trasporto rifiuti a terra', um: 'mq', quantita: 45.0, prezzoUnitario: 17.4, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L1.A.05.015', wbs: 'Demolizioni', descrizione: 'Demolizione e rimozione pavimento in gres porcellanato su sottofondo cementizio', um: 'mq', quantita: 95.0, prezzoUnitario: 11.9, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L1.B.01.012', wbs: 'Murature', descrizione: 'Nuovo tramezzo in laterizio forato sp. 8 cm con intonaco doppia faccia', um: 'mq', quantita: 32.0, prezzoUnitario: 48.3, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L1.C.01.008', wbs: 'Massetti', descrizione: 'Massetto in cemento alleggerito sp. 6 cm su solaio interfloor', um: 'mq', quantita: 95.0, prezzoUnitario: 21.5, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L1.D.01.021', wbs: 'Pavimenti', descrizione: 'Pavimento in gres porcellanato 60x60 posato a colla', um: 'mq', quantita: 88.0, prezzoUnitario: 42.6, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L1.E.01.005', wbs: 'Infissi', descrizione: 'Finestre a garantia legno-alluminio doppio vetro basso emissivo', um: 'pz', quantita: 5, prezzoUnitario: 680.0, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L2.A.01.030', wbs: 'Elettrico CEI 64-8', descrizione: 'Impianto elettrico sotto intonaco CEI 64-8 Livello 2 (quadro, prese, punti luce, differenziali)', um: 'mq', quantita: 95.0, prezzoUnitario: 54.0, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'L2.B.01.006', wbs: 'Idrico', descrizione: 'Impianto idrico-sanitario in multistrato con allacci apparecchi e scarichi', um: 'mq', quantita: 95.0, prezzoUnitario: 47.8, oneriSicurezza: false },
-  { id: uid(), codicePrezzario: 'OS.02.003', wbs: 'Oneri Sicurezza', descrizione: 'Oneri sicurezza: ponteggio fassatura perimetrale con autobloccanti e reti perz.', um: 'gg', quantita: 60, prezzoUnitario: 145.0, oneriSicurezza: true },
-  { id: uid(), codicePrezzario: 'OS.01.001', wbs: 'Oneri Sicurezza', descrizione: 'Oneri sicurezza: DPI (parapetti, corde, caschi) e attrezzature anticaduta', um: 'gg', quantita: 60, prezzoUnitario: 85.0, oneriSicurezza: true },
-];
+interface ArchinextStore {
+  commesse: Commessa[];
+  attivaId: string;
+  vani: Record<string, Vano[]>;
+  steps: Record<string, boolean[]>;
+  documenti: Record<string, DocumentoCommessa[]>;
+  activeStepIndex: number;
 
-const demoInfissi: AbacoInfissi[] = [
-  { id: uid(), locale: 'Soggiorno', tipo: 'Finestra SC.A. legno', dimensioni: '150x220 h', quantita: 1, prezzoUnitario: 1450 },
-  { id: uid(), locale: 'Soggiorno', tipo: 'Portafinestra legno', dimensioni: '120x230 h', quantita: 1, prezzoUnitario: 1650 },
-  { id: uid(), locale: 'Camera matrimoniale', tipo: 'Finestra SC.A. legno', dimensioni: '120x220 h', quantita: 1, prezzoUnitario: 1250 },
-  { id: uid(), locale: 'Studio', tipo: 'Finestra SC.A. PVC', dimensioni: '90x200 h', quantita: 1, prezzoUnitario: 850 },
-  { id: uid(), locale: 'Cucina', tipo: 'Finestra SC.A. PVC', dimensioni: '90x180 h', quantita: 1, prezzoUnitario: 780 },
-  { id: uid(), locale: 'Ingresso', tipo: 'Porta blindata', dimensioni: '90x210 h', quantita: 1, prezzoUnitario: 1850 },
-];
+  setAttiva: (id: string) => void;
+  setActiveStepIndex: (index: number) => void;
+  creaCommessa: (parziale?: Partial<Commessa>) => string;
+  aggiornaCommessa: (id: string, patch: Partial<Commessa>) => void;
+  eliminaCommessa: (id: string) => void;
+  toggleStep: (commessaId: string, stepIndex: number) => void;
+  setVani: (commessaId: string, vani: Vano[]) => void;
+  aggiungiDocumenti: (commessaId: string, docs: DocumentoCommessa[]) => void;
+  rimuoviDocumento: (commessaId: string, docId: string) => void;
+}
 
-const demoSanitari: AbacoSanitari[] = [
-  { id: uid(), ambiente: 'Bagno principale', apparecchio: 'Lavabo ceramica con piletta', quantita: 1, prezzoUnitario: 180 },
-  { id: uid(), ambiente: 'Bagno principale', apparecchio: 'Vaso WC sospeso scarico a parete', quantita: 1, prezzoUnitario: 420 },
-  { id: uid(), ambiente: 'Bagno principale', apparecchio: 'Cassetta di scarico incasso', quantita: 1, prezzoUnitario: 210 },
-  { id: uid(), ambiente: 'Bagno principale', apparecchio: 'Box doccia 80x120', quantita: 1, prezzoUnitario: 890 },
-  { id: uid(), ambiente: 'Bagno principale', apparecchio: 'Bidet', quantita: 1, prezzoUnitario: 240 },
-  { id: uid(), ambiente: 'Bagno secondo', apparecchio: 'Lavabo ceramica con piletta', quantita: 1, prezzoUnitario: 140 },
-  { id: uid(), ambiente: 'Bagno secondo', apparecchio: 'Vaso WC sospeso scarico a parete', quantita: 1, prezzoUnitario: 420 },
-  { id: uid(), ambiente: 'Bagno secondo', apparecchio: 'Box doccia 80x120', quantita: 1, prezzoUnitario: 890 },
-  { id: uid(), ambiente: 'Cucina', apparecchio: 'Lavello cucina inox 2 vasche', quantita: 1, prezzoUnitario: 320 },
-];
-
-const demoState = {
-  commesse: [demoCommessa],
-  attivaId: demoCommessa.id,
-  vani: { [demoCommessa.id]: demoVani },
-  voci: { [demoCommessa.id]: demoVoci },
-  infissi: { [demoCommessa.id]: demoInfissi },
-  sanitari: { [demoCommessa.id]: demoSanitari },
-  steps: { [demoCommessa.id]: [true, true, false, false, false, false, false] },
-  catalogoNta: [] as VoceNtaPrg[],
-  catalogoRegolamento: [] as VoceRegolamentoEdilizio[],
-  catalogoPrezzari: [] as VocePrezzario[],
-};
-
-const EMPTY_VANI: Vano[] = [];
-const EMPTY_VOCI: VoceComputo[] = [];
-
-export const useStore = create<State>()(
+export const useStore = create<ArchinextStore>()(
   persist(
-    (set) => ({
-      ...demoState,
-
-      caricaCataloghi: async () => {
-        try {
-          const data = await fetchCataloghiNormativi();
-          set({
-            catalogoNta: data.nta,
-            catalogoRegolamento: data.regolamento,
-            catalogoPrezzari: data.prezzari,
-          });
-        } catch (err) {
-          console.warn('Caricamento cataloghi normativi:', err);
-        }
+    (set, get) => ({
+      commesse: COMMESSE_INIZIALI,
+      attivaId: COMMESSE_INIZIALI[0].id,
+      vani: {
+        'comm-2026-014': [],
       },
-
-      creaCommessa: (c) => {
-        const id = uid();
-        set((s) => ({
-          commesse: [...s.commesse, { ...c, id, createdAt: new Date().toISOString() }],
-          attivaId: id,
-          vani: { ...s.vani, [id]: [] },
-          voci: { ...s.voci, [id]: [] },
-          infissi: { ...s.infissi, [id]: [] },
-          sanitari: { ...s.sanitari, [id]: [] },
-          steps: { ...s.steps, [id]: Array(7).fill(false) },
-        }));
+      steps: {
+        'comm-2026-014': [true, true, false, false, false, false, false],
       },
-
-      eliminaCommessa: (id) =>
-        set((s) => {
-          const commesse = s.commesse.filter((c) => c.id !== id);
-          const rest = (obj: Record<string, unknown>) => {
-            const { [id]: _drop, ...r } = obj;
-            return r;
-          };
-          return {
-            commesse,
-            vani: rest(s.vani) as State['vani'],
-            voci: rest(s.voci) as State['voci'],
-            infissi: rest(s.infissi) as State['infissi'],
-            sanitari: rest(s.sanitari) as State['sanitari'],
-            steps: rest(s.steps) as State['steps'],
-            attivaId: s.attivaId === id ? commesse[0]?.id ?? null : s.attivaId,
-          };
-        }),
+      documenti: {
+        'comm-2026-014': [],
+      },
+      activeStepIndex: 0,
 
       setAttiva: (id) => set({ attivaId: id }),
+
+      setActiveStepIndex: (index) => set({ activeStepIndex: index }),
+
+      creaCommessa: (parziale) => {
+        const count = get().commesse.length + 15;
+        const codice = `2026-${String(count).padStart(3, '0')}`;
+        const id = `comm-${Date.now()}`;
+        const nuova: Commessa = {
+          id,
+          codice,
+          titolo: parziale?.titolo ?? `Nuova Commessa ${codice}`,
+          indirizzo: parziale?.indirizzo ?? 'Roma RM',
+          municipio: parziale?.municipio ?? 'Municipio I',
+          foglio: parziale?.foglio ?? '',
+          particella: parziale?.particella ?? '',
+          subalterno: parziale?.subalterno ?? '',
+          categoriaCatastale: parziale?.categoriaCatastale ?? 'A/2',
+          rendita: parziale?.rendita ?? '',
+          tipologia: parziale?.tipologia ?? 'Manutenzione Straordinaria CILA',
+          tessutoPRG: parziale?.tessutoPRG ?? 'T2',
+          cartaQualita: parziale?.cartaQualita ?? false,
+          vincoloSoprintendenza: parziale?.vincoloSoprintendenza ?? false,
+        };
+
+        set((s) => ({
+          commesse: [nuova, ...s.commesse],
+          attivaId: id,
+          vani: { ...s.vani, [id]: [] },
+          steps: { ...s.steps, [id]: [false, false, false, false, false, false, false] },
+          documenti: { ...s.documenti, [id]: [] },
+        }));
+
+        return id;
+      },
 
       aggiornaCommessa: (id, patch) =>
         set((s) => ({
           commesse: s.commesse.map((c) => (c.id === id ? { ...c, ...patch } : c)),
         })),
 
-      aggiungiVano: (commessaId) =>
-        set((s) => ({
-          vani: {
-            ...s.vani,
-            [commessaId]: [
-              ...(s.vani[commessaId] ?? EMPTY_VANI),
-              { id: uid(), nome: '', destinazione: 'Camera singola', superficie: 0, superfFinestrata: 0, altezzaMedia: 2.7, vmc: false },
-            ],
-          },
-        })),
-
-      aggiornaVano: (commessaId, id, patch) =>
-        set((s) => ({
-          vani: {
-            ...s.vani,
-            [commessaId]: (s.vani[commessaId] ?? EMPTY_VANI).map((v) => (v.id === id ? { ...v, ...patch } : v)),
-          },
-        })),
-
-      eliminaVano: (commessaId, id) =>
-        set((s) => ({
-          vani: { ...s.vani, [commessaId]: (s.vani[commessaId] ?? EMPTY_VANI).filter((v) => v.id !== id) },
-        })),
-
-      aggiungiVoce: (commessaId, v) =>
-        set((s) => ({
-          voci: { ...s.voci, [commessaId]: [...(s.voci[commessaId] ?? EMPTY_VOCI), { ...v, id: uid() }] },
-        })),
-
-      aggiornaVoce: (commessaId, id, patch) =>
-        set((s) => ({
-          voci: {
-            ...s.voci,
-            [commessaId]: (s.voci[commessaId] ?? EMPTY_VOCI).map((c) => (c.id === id ? { ...c, ...patch } : c)),
-          },
-        })),
-
-      eliminaVoce: (commessaId, id) =>
-        set((s) => ({
-          voci: { ...s.voci, [commessaId]: (s.voci[commessaId] ?? EMPTY_VOCI).filter((c) => c.id !== id) },
-        })),
-
-      aggiungiInfisso: (commessaId, v) =>
-        set((s) => ({
-          infissi: { ...s.infissi, [commessaId]: [...(s.infissi[commessaId] ?? []), { ...v, id: uid() }] },
-        })),
-
-      aggiornaInfisso: (commessaId, id, patch) =>
-        set((s) => ({
-          infissi: {
-            ...s.infissi,
-            [commessaId]: (s.infissi[commessaId] ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)),
-          },
-        })),
-
-      eliminaInfisso: (commessaId, id) =>
-        set((s) => ({
-          infissi: { ...s.infissi, [commessaId]: (s.infissi[commessaId] ?? []).filter((c) => c.id !== id) },
-        })),
-
-      aggiungiSanitario: (commessaId, v) =>
-        set((s) => ({
-          sanitari: { ...s.sanitari, [commessaId]: [...(s.sanitari[commessaId] ?? []), { ...v, id: uid() }] },
-        })),
-
-      aggiornaSanitario: (commessaId, id, patch) =>
-        set((s) => ({
-          sanitari: {
-            ...s.sanitari,
-            [commessaId]: (s.sanitari[commessaId] ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)),
-          },
-        })),
-
-      eliminaSanitario: (commessaId, id) =>
-        set((s) => ({
-          sanitari: { ...s.sanitari, [commessaId]: (s.sanitari[commessaId] ?? []).filter((c) => c.id !== id) },
-        })),
-
-      toggleStep: (commessaId, index) =>
+      eliminaCommessa: (id) =>
         set((s) => {
-          const current = s.steps[commessaId] ?? Array(7).fill(false);
-          const next = [...current];
-          next[index] = !next[index];
-          return { steps: { ...s.steps, [commessaId]: next } };
+          const rimanenti = s.commesse.filter((c) => c.id !== id);
+          const nextAttiva =
+            s.attivaId === id ? (rimanenti[0]?.id ?? '') : s.attivaId;
+          return {
+            commesse: rimanenti,
+            attivaId: nextAttiva,
+          };
         }),
+
+      toggleStep: (commessaId, stepIndex) =>
+        set((s) => {
+          const current = s.steps[commessaId] ?? [false, false, false, false, false, false, false];
+          const updated = current.map((val, idx) => (idx === stepIndex ? !val : val));
+          return {
+            steps: {
+              ...s.steps,
+              [commessaId]: updated,
+            },
+          };
+        }),
+
+      setVani: (commessaId, vani) =>
+        set((s) => ({
+          vani: {
+            ...s.vani,
+            [commessaId]: vani,
+          },
+        })),
+
+      aggiungiDocumenti: (commessaId, docs) =>
+        set((s) => ({
+          documenti: {
+            ...s.documenti,
+            [commessaId]: [...docs, ...(s.documenti[commessaId] ?? [])],
+          },
+        })),
+
+      rimuoviDocumento: (commessaId, docId) =>
+        set((s) => ({
+          documenti: {
+            ...s.documenti,
+            [commessaId]: (s.documenti[commessaId] ?? []).filter((d) => d.id !== docId),
+          },
+        })),
     }),
     {
-      name: 'gestionale-dt-roma-v2',
-      partialize: (state) => ({
-        commesse: state.commesse,
-        attivaId: state.attivaId,
-        vani: state.vani,
-        voci: state.voci,
-        infissi: state.infissi,
-        sanitari: state.sanitari,
-        steps: state.steps,
-      }),
-      merge: (persistedState, currentState) => {
-        const p = (persistedState as Partial<State> | undefined) ?? {};
-        const hasCommesse = Array.isArray(p.commesse) && p.commesse.length > 0;
-        return {
-          ...currentState,
-          ...p,
-          commesse: hasCommesse ? p.commesse! : currentState.commesse,
-          attivaId: p.attivaId ?? (hasCommesse ? p.commesse![0].id : currentState.attivaId),
-        };
-      },
+      name: 'my-archinext-roma-storage',
     }
   )
 );
-
-export const useAttiva = () => {
-  const attivaId = useStore((s) => s.attivaId);
-  const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
-  return { attivaId, commessa };
-};
-
-export { PREZZARIO_LAZIO, EMPTY_VANI, EMPTY_VOCI };

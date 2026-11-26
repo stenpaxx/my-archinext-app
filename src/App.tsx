@@ -36,10 +36,10 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 text-white p-6 font-mono text-xs overflow-auto">
+        <div className="min-h-screen bg-neutral-950 text-white p-6 font-mono text-xs overflow-auto">
           <h1 className="text-base font-bold text-red-400 mb-2">Errore catturato in runtime</h1>
           <p className="mb-4 text-amber-300">{this.state.errorMsg}</p>
-          <pre className="whitespace-pre-wrap text-slate-300 bg-slate-900 p-4 rounded border border-slate-800">
+          <pre className="whitespace-pre-wrap text-neutral-300 bg-neutral-900 p-4 border border-neutral-800">
             {this.state.stack}
           </pre>
           <button
@@ -48,7 +48,7 @@ class ErrorBoundary extends React.Component<
               localStorage.clear();
               window.location.reload();
             }}
-            className="mt-4 px-4 py-2 bg-sky-600 text-white rounded font-sans font-semibold"
+            className="mt-4 px-4 py-2 bg-white text-neutral-950 font-sans font-semibold"
           >
             Pulisci cache locale e ricarica
           </button>
@@ -195,7 +195,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 flex overflow-x-clip">
+    <div className="min-h-screen bg-[#FAFAFA] text-neutral-900 flex overflow-x-clip">
       <Sidebar
         section={section}
         onChange={setSection}
@@ -205,36 +205,36 @@ function AppContent() {
       />
 
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-neutral-200 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 text-xs font-mono text-neutral-500 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
               aria-label="Apri menu"
-              className="lg:hidden inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shrink-0"
+              className="lg:hidden inline-flex items-center justify-center p-2 border border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50 shrink-0"
             >
               <Menu size={16} />
             </button>
-            <span className="hidden sm:inline">Cloud RLS:</span>
+            <span className="hidden sm:inline">SYNC:</span>
             {user ? (
-              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700 truncate">
+              <span className="inline-flex items-center gap-1.5 font-medium text-neutral-900 truncate">
                 <UserCheck className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{user.email}</span>
               </span>
             ) : (
-              <span className="font-medium text-amber-700 truncate">Modalità locale</span>
+              <span className="text-neutral-500 truncate">Locale</span>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {syncMsg && (
               <span
-                className={`text-[11px] sm:text-xs font-medium ${
+                className={`text-[11px] font-mono ${
                   syncStatus === 'error'
                     ? 'text-red-600'
                     : syncStatus === 'pending'
-                      ? 'text-amber-600'
-                      : 'text-emerald-600'
+                      ? 'text-amber-700'
+                      : 'text-neutral-700'
                 }`}
               >
                 {syncMsg}
@@ -247,11 +247,11 @@ function AppContent() {
                   type="button"
                   onClick={handleSyncCloud}
                   disabled={syncStatus === 'saving' || !commessa}
-                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-neutral-950 text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors"
                 >
                   {syncStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {syncStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
-                  {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
+                  {syncStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                  {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
                   {(syncStatus === 'idle' || syncStatus === 'pending') && <Cloud className="w-3.5 h-3.5" />}
                   <span>{syncStatus === 'saving' ? 'Salvataggio...' : 'Salva ora'}</span>
                 </button>
@@ -260,7 +260,7 @@ function AppContent() {
                   type="button"
                   onClick={handleLogout}
                   title="Esci dall'account"
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono border border-neutral-200 text-neutral-700 hover:border-neutral-950 transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Esci</span>
@@ -270,7 +270,7 @@ function AppContent() {
               <button
                 type="button"
                 onClick={() => setAuthOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-neutral-950 text-white hover:bg-neutral-800 transition-colors"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Accedi</span>
@@ -279,7 +279,7 @@ function AppContent() {
           </div>
         </header>
 
-        <div className="flex-1 w-full px-3 sm:px-6 py-4 sm:py-5">
+        <div className="flex-1 w-full px-3 sm:px-6 py-5 sm:py-6">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-6 items-start">
             <div className="xl:col-span-8 min-w-0 [&_.max-w-4xl]:max-w-none [&_.max-w-5xl]:max-w-none [&_.max-w-6xl]:max-w-none [&_.max-w-7xl]:max-w-none [&_table]:w-full">
               {section === 'due-diligence' && <DueDiligence />}
@@ -296,33 +296,33 @@ function AppContent() {
           </div>
         </div>
 
-        <footer className="border-t border-slate-200 bg-white/80 px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
+        <footer className="border-t border-neutral-200 bg-white px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-neutral-500">
           <div className="flex items-center gap-2">
-            <Bot className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <Bot className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
             <span>
-              Supporto decisionale assistito da AI (Reg. UE 2024/1689): gli elaborati richiedono verifica e asseverazione del tecnico abilitato.
+              AI Act (Reg. UE 2024/1689): supporto tecnico soggetto a verifica e asseverazione del professionista.
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-4 font-medium text-slate-600">
+          <div className="flex flex-wrap items-center gap-4 text-neutral-700">
             <button
               type="button"
               onClick={() => openLegal('privacy')}
-              className="inline-flex items-center gap-1 hover:text-slate-900"
+              className="inline-flex items-center gap-1 hover:text-neutral-950"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Privacy & GDPR</span>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Privacy &amp; GDPR</span>
             </button>
             <button
               type="button"
               onClick={() => openLegal('ai-act')}
-              className="hover:text-slate-900"
+              className="hover:text-neutral-950"
             >
-              Trasparenza AI Act
+              AI Act
             </button>
             <button
               type="button"
               onClick={() => openLegal('disclaimer')}
-              className="hover:text-slate-900"
+              className="hover:text-neutral-950"
             >
               Note Legali
             </button>

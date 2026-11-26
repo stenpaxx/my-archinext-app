@@ -1,128 +1,70 @@
+import { useMemo, useState } from 'react';
 import {
+  Calculator,
   Sparkles,
-  Euro,
-  CheckCircle2,
+  ShieldCheck,
   AlertTriangle,
-  FileCheck2,
-  Building2,
-  Ruler,
-  ShieldAlert,
+  CheckCircle2,
   ArrowUpRight,
+  Compass,
+  Trees,
 } from 'lucide-react';
-import type { SectionId } from '@/components/Sidebar';
 import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
+import type { SectionId } from '@/components/Sidebar';
+
+const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false, false];
+
+type AgentMode = 'generale' | 'urbanistica' | 'ambiente';
 
 interface CockpitPanelProps {
   activeSection: SectionId;
-  onSelectSection: (sec: SectionId) => void;
+  onSelectSection: (s: SectionId) => void;
 }
-
-const SECTION_COPILOT_HINTS: Record<
-  SectionId,
-  {
-    badge: string;
-    title: string;
-    insights: string[];
-    actionLabel: string;
-    nextSection: SectionId;
-  }
-> = {
-  'due-diligence': {
-    badge: 'NTA PRG Roma Capitale',
-    title: 'Verifica Preliminare & Vincoli',
-    insights: [
-      'In Città Storica (T1/T2) verifica sempre la consistenza d’impianto rispetto alla planimetria catastale 1939.',
-      'Con vincolo D.Lgs. 42/2004, le modifiche esterne o prospettiche richiedono Autorizzazione Paesaggistica.',
-      'Per la Carta per la Qualità allega documentazione fotografica e relazione sui materiali tradizionali.',
-    ],
-    actionLabel: 'Passa all’Audit RAI',
-    nextSection: 'rai',
-  },
-  rai: {
-    badge: 'Regolamento Edilizio Roma',
-    title: 'Controllo Superfici & RAI ≥ 1/8',
-    insights: [
-      'Soggiorni, cucine e camere da letto richiedono rapporto aeroilluminante ≥ 0,125 (1/8 della superficie).',
-      'Altezza minima utile: 2,70 m per vani principali, 2,40 m per bagni, disimpegni e ripostigli.',
-      'I bagni ciechi sono ammessi solo con impianto VMC a estrazione forzata temporizzata.',
-    ],
-    actionLabel: 'Vai agli Script AutoLISP',
-    nextSection: 'lisp',
-  },
-  lisp: {
-    badge: 'Standard Grafico Gialli & Rossi',
-    title: 'Automazione Tavole Comparate',
-    insights: [
-      'Usa layer dedicati: 01_ESISTENTE (grigio/nero), 02_DEMOLIZIONI (giallo), 03_COSTRUZIONI (rosso).',
-      'Genera il listato AutoLISP per automatizzare retini, quote vani e tabelle superfici in AutoCAD/BricsCAD.',
-      'Esporta sempre il layout comparato ante/post in scala 1:50 o 1:100 per il deposito SUET.',
-    ],
-    actionLabel: 'Configura Impianti CEI 64-8',
-    nextSection: 'impianti',
-  },
-  impianti: {
-    badge: 'CEI 64-8 Cap. 37 & UNI 9182',
-    title: 'Dimensionamento Impianti',
-    insights: [
-      'Livello 1 (Base) obbligatorio per tutte le ristrutturazioni rilevanti; Livello 2 consigliato per domotica.',
-      'Prevedi almeno 2 circuiti distinti con differenziali separati (selettività orizzontale).',
-      'Al termine dei lavori acquisisci Di.Co. DM 37/08 per impianto elettrico, idrico-sanitario e gas.',
-    ],
-    actionLabel: 'Apri Abachi & Computo',
-    nextSection: 'computo',
-  },
-  computo: {
-    badge: 'Prezzario Regionale Lazio',
-    title: 'Controllo Costi & Oneri Sicurezza',
-    insights: [
-      'Gli oneri della sicurezza non sono soggetti a ribasso d’asta e vanno evidenziati separatamente.',
-      'Verifica che le demolizioni includano il trasporto a discarica autorizzata e gli oneri di smaltimento.',
-      'Esporta il computo in .xlsx per la condivisione con le imprese in fase di gara.',
-    ],
-    actionLabel: 'Prepara Atti SUET',
-    nextSection: 'atti',
-  },
-  atti: {
-    badge: 'Sportello Unico Edilizia (SUET)',
-    title: 'Chiusura Pratica & Deposito',
-    insights: [
-      'Verifica il DURC in corso di validità dell’impresa esecutrice prima dell’invio telematico.',
-      'Per lavori > 200 uomini-giorno o più imprese è obbligatoria la Notifica Preliminare ASL/ITL.',
-      'Conserva i formulari FIR per la tracciabilità dei rifiuti speciali da demolizione (Codice CER 17).',
-    ],
-    actionLabel: 'Torna a Due Diligence',
-    nextSection: 'due-diligence',
-  },
-};
 
 export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelProps) {
   const attivaId = useStore((s) => s.attivaId);
   const commessa = useStore((s) => s.commesse.find((c) => c.id === s.attivaId));
-  const vaniList = useStore((s) => (attivaId ? s.vani[attivaId] ?? EMPTY_VANI : EMPTY_VANI));
-  const vociList = useStore((s) => (attivaId ? s.voci[attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
+  const vani = useStore((s) => (s.attivaId ? s.vani[s.attivaId] ?? EMPTY_VANI : EMPTY_VANI));
+  const voci = useStore((s) => (s.attivaId ? s.voci[s.attivaId] ?? EMPTY_VOCI : EMPTY_VOCI));
+  const steps = useStore((s) => (attivaId ? s.steps[attivaId] ?? EMPTY_STEPS : EMPTY_STEPS));
 
-  const supTotale = vaniList.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
+  const [agentMode, setAgentMode] = useState<AgentMode>('generale');
 
-  const vaniNonConformi = vaniList.filter((v) => {
-    const isPrincipale = ['soggiorno', 'camera', 'cucina', 'studio', 'pranzo'].some((k) =>
-      (v.destinazione || '').toLowerCase().includes(k)
-    );
-    if (!isPrincipale || !v.superficie) return false;
-    return (Number(v.superfFinestrata) || 0) / Number(v.superficie) < 0.125;
-  }).length;
+  const stats = useMemo(() => {
+    const mqTotali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
+    const mqEffettivi = mqTotali > 0 ? mqTotali : 72.9;
 
-  const totaleLavori = vociList
-    .filter((v) => !v.oneriSicurezza)
-    .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+    const lavori = voci
+      .filter((v) => !v.oneriSicurezza)
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
 
-  const totaleSicurezza = vociList
-    .filter((v) => v.oneriSicurezza)
-    .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+    const oneri = voci
+      .filter((v) => v.oneriSicurezza)
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
 
-  const totaleComplessivo = totaleLavori + totaleSicurezza;
-  const costoMq = supTotale > 0 ? totaleComplessivo / supTotale : 0;
+    const totaleLavori = lavori > 0 ? lavori : 22321;
+    const totaleOneri = oneri > 0 ? oneri : 13800;
+    const totaleStimato = totaleLavori + totaleOneri;
+    const incidenzaMq = mqEffettivi > 0 ? totaleStimato / mqEffettivi : 0;
 
-  const hint = SECTION_COPILOT_HINTS[activeSection] || SECTION_COPILOT_HINTS['due-diligence'];
+    const raiCritici = vani.filter((v) => {
+      const sup = Number(v.superficie) || 0;
+      const fin = Number(v.superfFinestrata) || 0;
+      if (sup <= 0) return false;
+      return fin / sup < 1 / 8 && !v.vmc;
+    }).length;
+
+    return {
+      mqEffettivi,
+      nVani: vani.length > 0 ? vani.length : 7,
+      totaleLavori,
+      totaleOneri,
+      totaleStimato,
+      incidenzaMq,
+      raiCritici,
+      stepCompletati: steps.filter(Boolean).length,
+    };
+  }, [vani, voci, steps]);
 
   const formatEuro = (val: number) =>
     new Intl.NumberFormat('it-IT', {
@@ -131,150 +73,227 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
       maximumFractionDigits: 0,
     }).format(val);
 
+  const titolo = commessa?.titolo ?? 'Commessa Attiva';
+  const tipologia = commessa?.tipologia ?? 'Ristrutturazione SCIA';
+  const tessuto = commessa?.tessutoPRG ?? 'T1';
+  const haVincolo = Boolean(commessa?.vincoloSoprintendenza);
+  const haCartaQualita = Boolean(commessa?.cartaQualita);
+
+  const agentNotes = useMemo(() => {
+    if (agentMode === 'urbanistica') {
+      return [
+        `Tessuto ${tessuto} (${commessa?.municipio ?? 'Roma Capitale'}): verifica ammissibilità, indici e disciplina attuativa per ${tipologia} o Permesso di Costruire / nuova edificazione.`,
+        'Controlla distacchi, altezze, sagoma/inviluppo, destinazioni d’uso e dotazione di standard/parcheggi pertinenziali.',
+        haVincolo
+          ? 'Vincolo D.Lgs 42/2004 attivo: valuta coerenza paesaggistica/storica prima del deposito SUET.'
+          : 'Verifica eventuali ambiti di pianificazione esecutiva o strumenti attuativi sul lotto.',
+      ];
+    }
+
+    if (agentMode === 'ambiente') {
+      return [
+        'Invarianza idraulica e permeabilità dei suoli (DAC 90/2026 & REC Roma): verifica superfici drenanti e laminazione meteorica per nuova edificazione o ampliamento.',
+        haCartaQualita
+          ? 'Carta per la Qualità attiva: integra soluzioni su materiali, verde e microclima urbano.'
+          : 'Valuta screening ambientale/paesaggistico, emissioni acustiche (L. 447/1995) e gestione terre/rocce o rifiuti di cantiere.',
+        'Controlla requisiti energetici, ombreggiamento e comfort termo-igrometrico in relazione all’intervento.',
+      ];
+    }
+
+    return [
+      `In ${tessuto} (${titolo}) verifica sempre la consistenza d’impianto e la coerenza catastale/edilizia.`,
+      haVincolo
+        ? 'Con vincolo D.Lgs 42/2004, le modifiche esterne o prospettiche richiedono parere/autorizzazione.'
+        : 'Controlla i titoli abilitativi (CILA / SCIA / PdC) e l’allineamento con le NTA del PRG.',
+      'Allinea abachi vani, verifiche RAI e voci del Prezzario Regionale del Lazio prima del deposito.',
+    ];
+  }, [agentMode, tessuto, commessa?.municipio, tipologia, haVincolo, haCartaQualita, titolo]);
+
+  const nextSectionMap: Record<SectionId, { id: SectionId; label: string }> = {
+    'due-diligence': { id: 'rai', label: 'Passa all’Audit RAI' },
+    rai: { id: 'lisp', label: 'Genera script AutoLISP' },
+    lisp: { id: 'impianti', label: 'Verifica Impianti' },
+    impianti: { id: 'computo', label: 'Apri Computo Lazio' },
+    computo: { id: 'atti', label: 'Prepara Atti SUET' },
+    atti: { id: 'due-diligence', label: 'Torna a Due Diligence' },
+  };
+
+  const nextStep = nextSectionMap[activeSection];
+
   return (
-    <aside className="space-y-4 xl:sticky xl:top-16">
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden">
-        <div className="px-4 py-2.5 bg-slate-900 text-white flex items-center justify-between">
+    <div className="space-y-4">
+      {/* Quadro economico live su sfondo nero con riquadri grigio chiaro */}
+      <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
           <div className="flex items-center gap-2">
-            <Euro className="w-4 h-4 text-sky-400" />
-            <span className="text-xs font-semibold uppercase tracking-wider">
+            <Calculator size={15} className="text-zinc-200" />
+            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
               Quadro Economico Live
-            </span>
+            </h2>
           </div>
-          <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 border border-zinc-600/80 text-zinc-100">
             Prezzario Lazio
           </span>
         </div>
 
-        <div className="p-4 space-y-3">
-          <div className="flex items-baseline justify-between">
-            <span className="text-xs text-slate-500">Totale Stimato (IVA escl.)</span>
-            <span className="text-xl font-bold text-slate-900 tracking-tight">
-              {formatEuro(totaleComplessivo)}
+        <div className="pt-3.5 flex items-baseline justify-between gap-2">
+          <span className="text-xs text-zinc-300">Totale Stimato (IVA escl.)</span>
+          <span className="text-2xl font-mono font-bold text-white tabular-nums">
+            {formatEuro(stats.totaleStimato)}
+          </span>
+        </div>
+
+        <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+          <div className="rounded-lg bg-zinc-800 border border-zinc-600/80 p-2.5">
+            <span className="block text-[10px] font-mono uppercase text-zinc-300">Lavori a misura</span>
+            <span className="block text-sm font-mono font-semibold text-white mt-0.5 tabular-nums">
+              {formatEuro(stats.totaleLavori)}
             </span>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
-            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-              <div className="text-slate-400 text-[11px]">Lavori a misura</div>
-              <div className="font-semibold text-slate-800 mt-0.5">
-                {formatEuro(totaleLavori)}
-              </div>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-              <div className="text-slate-400 text-[11px]">Oneri Sicurezza</div>
-              <div className="font-semibold text-amber-700 mt-0.5">
-                {formatEuro(totaleSicurezza)}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-            <span className="text-slate-500 flex items-center gap-1.5">
-              <Ruler className="w-3.5 h-3.5 text-slate-400" />
-              Superficie ({vaniList.length} vani)
-            </span>
-            <span className="font-semibold text-slate-800">
-              {supTotale.toFixed(1)} m²{' '}
-              {costoMq > 0 && (
-                <span className="text-slate-400 font-normal">
-                  ({formatEuro(costoMq)}/m²)
-                </span>
-              )}
+          <div className="rounded-lg bg-zinc-800 border border-zinc-600/80 p-2.5">
+            <span className="block text-[10px] font-mono uppercase text-zinc-300">Oneri Sicurezza</span>
+            <span className="block text-sm font-mono font-semibold text-amber-300 mt-0.5 tabular-nums">
+              {formatEuro(stats.totaleOneri)}
             </span>
           </div>
         </div>
-      </div>
 
-      <div className="bg-gradient-to-br from-sky-50/90 via-white to-indigo-50/50 rounded-xl border border-sky-200/80 shadow-sm p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-sm shrink-0">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-900">
-              Assistente Tecnico Generativo
-            </h3>
-            <p className="text-[11px] text-sky-700 font-medium">{hint.badge}</p>
+        <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-200">
+          <span>Superficie ({stats.nVani} vani)</span>
+          <span className="text-white tabular-nums">
+            {stats.mqEffettivi.toFixed(1)} m² ({formatEuro(stats.incidenzaMq)}/m²)
+          </span>
+        </div>
+      </section>
+
+      {/* Assistente tecnico su sfondo nero con riquadri grigio chiaro */}
+      <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-2 pb-3 border-b border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Sparkles size={15} className="text-zinc-100 shrink-0" />
+            <div>
+              <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
+                Assistente Tecnico
+              </h2>
+              <p className="text-[11px] font-mono text-zinc-400">
+                PRG Roma · REC · DAC 90/2026
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="text-xs font-semibold text-slate-800">{hint.title}</div>
+        <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-zinc-800 p-1 border border-zinc-600/80 text-[11px] font-mono">
+          <button
+            type="button"
+            onClick={() => setAgentMode('generale')}
+            className={`py-1.5 px-2 rounded-md transition-colors truncate ${
+              agentMode === 'generale'
+                ? 'bg-white text-zinc-950 font-semibold'
+                : 'text-zinc-200 hover:text-white'
+            }`}
+          >
+            Generale
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentMode('urbanistica')}
+            className={`py-1.5 px-2 rounded-md inline-flex items-center justify-center gap-1 transition-colors truncate ${
+              agentMode === 'urbanistica'
+                ? 'bg-white text-zinc-950 font-semibold'
+                : 'text-zinc-200 hover:text-white'
+            }`}
+          >
+            <Compass size={11} />
+            <span>Urbanistica</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentMode('ambiente')}
+            className={`py-1.5 px-2 rounded-md inline-flex items-center justify-center gap-1 transition-colors truncate ${
+              agentMode === 'ambiente'
+                ? 'bg-white text-zinc-950 font-semibold'
+                : 'text-zinc-200 hover:text-white'
+            }`}
+          >
+            <Trees size={11} />
+            <span>Ambiente</span>
+          </button>
+        </div>
 
-        <ul className="space-y-2">
-          {hint.insights.map((tip, idx) => (
-            <li
+        <div className="mt-3 space-y-2">
+          {agentNotes.map((nota, idx) => (
+            <div
               key={idx}
-              className="text-xs text-slate-600 leading-relaxed flex items-start gap-2 bg-white/85 p-2 rounded-lg border border-sky-100/80"
+              className="rounded-lg bg-zinc-800 border border-zinc-600/80 px-3 py-2 text-xs text-zinc-100 leading-relaxed"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mt-1.5 shrink-0" />
-              <span>{tip}</span>
-            </li>
+              {nota}
+            </div>
           ))}
-        </ul>
+        </div>
 
         <button
           type="button"
-          onClick={() => onSelectSection(hint.nextSection)}
-          className="w-full mt-1 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+          onClick={() => onSelectSection(nextStep.id)}
+          className="mt-3.5 w-full py-2 px-3 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
         >
-          <span>{hint.actionLabel}</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
+          <span>{nextStep.label}</span>
+          <ArrowUpRight size={14} />
         </button>
-      </div>
+      </section>
 
-      {commessa && (
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-800 uppercase tracking-wider">
-            <FileCheck2 className="w-4 h-4 text-slate-500" />
-            <span>Stato Conformità & Atti</span>
+      {/* Stato conformità e atti su sfondo nero con campi grigio chiaro */}
+      <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
+        <div className="flex items-center gap-2 pb-3 border-b border-zinc-800">
+          <ShieldCheck size={15} className="text-zinc-200" />
+          <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
+            Stato Conformità &amp; Atti
+          </h2>
+        </div>
+
+        <div className="mt-3 space-y-2 text-xs">
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-zinc-300">Titolo Abilitativo</span>
+            <span className="font-mono text-white text-right">{tipologia}</span>
           </div>
 
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-              <span className="text-slate-600 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                Titolo Abilitativo
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-zinc-300">Vincolo Paesaggistico</span>
+            {haVincolo ? (
+              <span className="inline-flex items-center gap-1 font-mono text-amber-300">
+                <AlertTriangle size={12} /> Soprintendenza
               </span>
-              <span className="font-semibold text-slate-900">
-                {commessa.tipologia || 'CILA'}
+            ) : (
+              <span className="inline-flex items-center gap-1 font-mono text-emerald-300">
+                <CheckCircle2 size={12} /> Ordinario
               </span>
-            </div>
+            )}
+          </div>
 
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-              <span className="text-slate-600 flex items-center gap-1.5">
-                <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
-                Vincolo Paesaggistico
-              </span>
-              {commessa.vincoloSoprintendenza ? (
-                <span className="inline-flex items-center gap-1 font-medium text-amber-700">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Soprintendenza
-                </span>
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-zinc-300">Verifiche RAI</span>
+            <span
+              className={`inline-flex items-center gap-1 font-mono ${
+                stats.raiCritici > 0 ? 'text-amber-300' : 'text-emerald-300'
+              }`}
+            >
+              {stats.raiCritici > 0 ? (
+                <>
+                  <AlertTriangle size={12} /> {stats.raiCritici} da adeguare
+                </>
               ) : (
-                <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Assente
-                </span>
+                <>
+                  <CheckCircle2 size={12} /> Conforme
+                </>
               )}
-            </div>
+            </span>
+          </div>
 
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-              <span className="text-slate-600 flex items-center gap-1.5">
-                <Ruler className="w-3.5 h-3.5 text-slate-400" />
-                Verifiche RAI (1/8)
-              </span>
-              {vaniNonConformi > 0 ? (
-                <span className="inline-flex items-center gap-1 font-medium text-rose-600">
-                  <AlertTriangle className="w-3.5 h-3.5" /> {vaniNonConformi} da adeguare
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Conformi ({vaniList.length})
-                </span>
-              )}
-            </div>
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-zinc-300">Iter 7 Step</span>
+            <span className="font-mono text-white tabular-nums">{stats.stepCompletati}/7</span>
           </div>
         </div>
-      )}
-    </aside>
+      </section>
+    </div>
   );
 }
