@@ -2,12 +2,18 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { Menu, Save, LogIn, LogOut, Check } from 'lucide-react';
 import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
+import { AuthModal } from '@/components/AuthModal';
 import { DueDiligence } from '@/modules/DueDiligence';
 import { Cronoprogramma } from '@/modules/Cronoprogramma';
 import { Bozze } from '@/modules/Bozze';
 import { CassettoDocumentale } from '@/modules/CassettoDocumentale';
 import { GeneratoreLisp } from '@/modules/GeneratoreLisp';
 import { useAttiva, useStore } from '@/lib/store';
+import { getSupabase } from '@/lib/supabase';
+import {
+  caricaDaSupabase,
+  sincronizzaCommessaSuSupabase,
+} from '@/lib/supabaseSync';
 
 type ModuleMap = Record<string, Record<string, ComponentType | undefined>>;
 
@@ -62,14 +68,29 @@ export function App() {
   const [activeSection, setActiveSection] = useState<SectionId>('due-diligence');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('archinext_logged_in') !== 'false';
-    } catch {
-      return true;
-    }
-  });
+
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const caricaDatiCloud = async () => {
+    try {
+      const cloudData = await caricaDaSupabase();
+      if (cloudData && cloudData.commesse.length > 0) {
+        useStore.setState((prev) => ({
+          commesse: cloudData.commesse,
+          attivaId: cloudData.commesse.some((c) => c.id === prev.attivaId)
+            ? prev.attivaId
+            : cloudData.commesse[0].id,
+          vani: { ...prev.vani, ...cloudData.vani },
+          voci: { ...prev.voci, ...cloudData.voci },
+        }));
+      }
+    } catch {
+      // mantiene i dati locali se offline
+    }
+  };
 
   useEffect(() => {
     const onResize = () => {
@@ -81,25 +102,75 @@ export function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const handleToggleAuth = () => {
-    setIsLoggedIn((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('archinext_logged_in', String(next));
-      } catch {
-        // ignora errori storage
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    void sb.auth.getSession().then(({ data }) => {
+      const mail = data.session?.user?.email ?? null;
+      setUserEmail(mail);
+      if (mail) {
+        void caricaDatiCloud();
       }
-      return next;
     });
+
+    const {
+      data: { subscription },
+    } = sb.auth.onAuthStateChange((_event, session) => {
+      const mail = session?.user?.email ?? null;
+      setUserEmail(mail);
+      if (mail) {
+        void caricaDatiCloud();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleAuthButtonClick = async () => {
+    if (userEmail) {
+      const sb = getSupabase();
+      if (sb) {
+        try {
+          await sb.auth.signOut();
+        } catch {
+          // ignora eventuali errori di rete
+        }
+      }
+      setUserEmail(null);
+      setSyncError(null);
+    } else {
+      setAuthModalOpen(true);
+    }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setSyncError(null);
+    const snapshot = useStore.getState();
     try {
-      const snapshot = useStore.getState();
       localStorage.setItem('my-archinext-manual-save', JSON.stringify(snapshot));
     } catch {
       // ignora errori storage
     }
+
+    const commessaCorrente =
+      snapshot.commesse.find((c) => c.id === snapshot.attivaId) ?? snapshot.commesse[0];
+
+    if (userEmail && commessaCorrente) {
+      try {
+        await sincronizzaCommessaSuSupabase(
+          commessaCorrente,
+          snapshot.vani?.[commessaCorrente.id] ?? [],
+          snapshot.voci?.[commessaCorrente.id] ?? []
+        );
+      } catch (err: unknown) {
+        setSyncError(err instanceof Error ? err.message : 'Errore sync Cloud');
+        return;
+      }
+    }
+
     setSavedFeedback(true);
     window.setTimeout(() => setSavedFeedback(false), 1800);
   };
@@ -177,9 +248,20 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {userEmail && (
+              <span className="hidden sm:inline-block max-w-[180px] truncate text-[11px] font-mono text-zinc-300 lg:text-zinc-600">
+                {userEmail}
+              </span>
+            )}
+
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
+              title={
+                userEmail
+                  ? 'Salva in locale e sincronizza su Supabase Cloud'
+                  : 'Salva in locale (fai Login per sincronizzare su Cloud)'
+              }
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-mono font-bold text-white hover:bg-emerald-500 transition-colors shrink-0"
             >
               {savedFeedback ? <Check size={13} /> : <Save size={13} />}
@@ -188,14 +270,30 @@ export function App() {
 
             <button
               type="button"
-              onClick={handleToggleAuth}
+              onClick={() => void handleAuthButtonClick()}
+              title={userEmail ? `Esci da ${userEmail}` : 'Accedi al Cloud'}
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-600 lg:border-zinc-300 bg-zinc-900 lg:bg-white px-2.5 py-1.5 text-[11px] font-mono font-bold text-white lg:text-zinc-900 hover:bg-zinc-800 lg:hover:bg-zinc-200 transition-colors shrink-0"
             >
-              {isLoggedIn ? <LogOut size={13} /> : <LogIn size={13} />}
-              <span>{isLoggedIn ? 'Logout' : 'Login'}</span>
+              {userEmail ? <LogOut size={13} /> : <LogIn size={13} />}
+              <span>{userEmail ? 'Logout' : 'Login'}</span>
             </button>
           </div>
         </header>
+
+        {syncError && (
+          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 pt-3">
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700 flex items-center justify-between">
+              <span>Errore sincronizzazione Supabase: {syncError}</span>
+              <button
+                type="button"
+                onClick={() => setSyncError(null)}
+                className="font-mono underline ml-3"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mx-auto max-w-[1600px] p-4 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           <main className="xl:col-span-8 min-w-0">{renderSection()}</main>
@@ -207,6 +305,21 @@ export function App() {
           </aside>
         </div>
       </div>
+
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onSuccess={() => {
+          const sb = getSupabase();
+          if (sb) {
+            void sb.auth.getSession().then(({ data }) => {
+              const mail = data.session?.user?.email ?? null;
+              setUserEmail(mail);
+              if (mail) void caricaDatiCloud();
+            });
+          }
+        }}
+      />
     </div>
   );
 }

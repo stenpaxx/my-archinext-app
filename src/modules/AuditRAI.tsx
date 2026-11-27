@@ -1,5 +1,5 @@
 import { Plus, Trash2, AlertTriangle, CircleCheck, Wind } from 'lucide-react';
-import { useStore, useAttiva } from '@/lib/store';
+import { useStore, useAttiva, EMPTY_VANI } from '@/lib/store';
 import { DESTINAZIONI_VANO, SUPERFICIE_MINIMA, ALTEZZA_MINIMA } from '@/lib/types';
 
 const RAI_MIN = 1 / 8; // 0,125
@@ -20,7 +20,7 @@ const cellInput =
 
 export function AuditRAI() {
   const { commessa } = useAttiva();
-  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? [] : []));
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? EMPTY_VANI : EMPTY_VANI));
   const aggiungiVano = useStore((s) => s.aggiungiVano);
   const aggiornaVano = useStore((s) => s.aggiornaVano);
   const eliminaVano = useStore((s) => s.eliminaVano);

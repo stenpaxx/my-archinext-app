@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Calculator, Download, Sparkles } from 'lucide-react';
-import { useStore, useAttiva, type VoceComputo } from '@/lib/store';
+import {
+  useStore,
+  useAttiva,
+  EMPTY_VOCI,
+  EMPTY_VANI,
+  type VoceComputo,
+} from '@/lib/store';
 
 const fmtEuro = (n: number) =>
   new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(n);
@@ -78,8 +84,8 @@ const VOCI_LAZIO_PRESET: Array<Omit<VoceComputo, 'id'>> = [
 
 export function Computo() {
   const { commessa } = useAttiva();
-  const voci = useStore((s) => (commessa ? s.voci?.[commessa.id] ?? [] : []));
-  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? [] : []));
+  const voci = useStore((s) => (commessa ? s.voci?.[commessa.id] ?? EMPTY_VOCI : EMPTY_VOCI));
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? EMPTY_VANI : EMPTY_VANI));
   const aggiungiVoce = useStore((s) => s.aggiungiVoce);
   const aggiornaVoce = useStore((s) => s.aggiornaVoce);
   const eliminaVoce = useStore((s) => s.eliminaVoce);
@@ -154,7 +160,7 @@ export function Computo() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
-            6. Abachi e Computo Metrico Estimativo
+            4. Abachi e Computo Metrico Estimativo
           </h1>
           <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
             Tariffa dei Prezzi Regione Lazio · Commessa{' '}

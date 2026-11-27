@@ -14,7 +14,15 @@ import {
   Minus,
 } from 'lucide-react';
 import { useStore, useAttiva } from '@/lib/store';
-import { STEP_LABELS } from '@/lib/types';
+
+const STEP_LABELS = [
+  'Due Diligence, Catasto & PRG',
+  'Audit Distributivo & RAI (DM 05/07/1975)',
+  'Abachi Vani, Murature & Infissi',
+  'Computo Metrico Estimativo (Prezzario Lazio)',
+  'Cronoprogramma Lavori & Fasi',
+  'Relazione Asseverata SUET Roma',
+];
 
 const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false];
 
