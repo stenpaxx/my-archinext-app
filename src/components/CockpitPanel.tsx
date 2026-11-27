@@ -11,6 +11,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
+import { calcolaRiepilogoEconomico } from '@/lib/economia';
 import type { SectionId } from '@/components/Sidebar';
 
 const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false];
@@ -32,21 +33,8 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
   const [agentMode, setAgentMode] = useState<AgentMode>('generale');
 
   const stats = useMemo(() => {
-    const mqAudit = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
-    const mqEffettivi = mqAudit > 0 ? mqAudit : 72.0;
-
-    const haVociComputo = voci.length > 0;
-    const lavoriComputo = voci
-      .filter((v) => !v.oneriSicurezza)
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
-    const oneriComputo = voci
-      .filter((v) => Boolean(v.oneriSicurezza))
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
-
-    const totaleLavori = haVociComputo ? lavoriComputo : mqAudit > 0 ? mqAudit * 280 : 0;
-    const totaleOneri = haVociComputo ? oneriComputo : mqAudit > 0 ? mqAudit * 25 : 0;
-    const totaleStimato = totaleLavori + totaleOneri;
-    const incidenzaMq = mqEffettivi > 0 ? totaleStimato / mqEffettivi : 0;
+    const eco = calcolaRiepilogoEconomico(voci, vani);
+    const incidenzaMq = eco.superficieTotale > 0 ? eco.totaleGenerale / eco.superficieTotale : 0;
 
     const raiCritici = vani.filter((v) => {
       const sup = Number(v.superficie) || 0;
@@ -61,15 +49,11 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
     );
 
     return {
-      mqEffettivi,
+      eco,
       nVani: vani.length,
-      totaleLavori,
-      totaleOneri,
-      totaleStimato,
       incidenzaMq,
       raiCritici,
       stepCompletati,
-      stimaDaAudit: !haVociComputo && mqAudit > 0,
       haDatiCatastali,
     };
   }, [vani, voci, steps, commessa]);
@@ -153,6 +137,13 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
     ];
   }, [agentMode, tipologia, titolo, tessuto, commessa?.municipio, haVincolo, haCartaQualita]);
 
+  const badgeEconomico =
+    stats.eco.modalita === 'computo'
+      ? `Da Computo (${stats.eco.numeroVoci} voci)`
+      : stats.eco.modalita === 'stima'
+        ? 'Stima da Audit mq'
+        : 'Prezzario Lazio';
+
   return (
     <div className="space-y-4">
       <section className="rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 p-4 sm:p-5 shadow-sm">
@@ -163,15 +154,25 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
               Quadro Economico Live
             </h2>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 border border-zinc-600/80 text-zinc-100">
-            {stats.stimaDaAudit ? 'Stima da Audit mq' : 'Prezzario Lazio'}
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              stats.eco.modalita === 'stima'
+                ? 'bg-amber-950/60 border-amber-700/80 text-amber-200'
+                : 'bg-zinc-800 border-zinc-600/80 text-zinc-100'
+            }`}
+          >
+            {badgeEconomico}
           </span>
         </div>
 
         <div className="pt-3.5 flex items-baseline justify-between gap-2">
-          <span className="text-xs text-zinc-300">Totale Stimato (IVA escl.)</span>
+          <span className="text-xs text-zinc-300">
+            {stats.eco.modalita === 'computo'
+              ? 'Totale Computo (IVA escl.)'
+              : 'Totale Stimato (IVA escl.)'}
+          </span>
           <span className="text-2xl font-mono font-bold text-white tabular-nums">
-            {formatEuro(stats.totaleStimato)}
+            {formatEuro(stats.eco.totaleGenerale)}
           </span>
         </div>
 
@@ -181,7 +182,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
               Lavori a misura
             </span>
             <span className="block text-sm font-mono font-semibold text-white mt-0.5 tabular-nums">
-              {formatEuro(stats.totaleLavori)}
+              {formatEuro(stats.eco.importoLavori)}
             </span>
           </div>
           <div className="rounded-lg bg-zinc-800 border border-zinc-600/80 p-2.5">
@@ -189,7 +190,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
               Oneri Sicurezza
             </span>
             <span className="block text-sm font-mono font-semibold text-amber-300 mt-0.5 tabular-nums">
-              {formatEuro(stats.totaleOneri)}
+              {formatEuro(stats.eco.oneriSicurezza)}
             </span>
           </div>
         </div>
@@ -197,7 +198,9 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
         <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-200">
           <span>Superficie ({stats.nVani} vani)</span>
           <span className="text-white tabular-nums">
-            {stats.mqEffettivi.toFixed(1)} m² ({formatEuro(stats.incidenzaMq)}/m²)
+            {stats.eco.superficieTotale > 0
+              ? `${stats.eco.superficieTotale.toFixed(1)} m² (${formatEuro(stats.incidenzaMq)}/m²)`
+              : '0,0 m²'}
           </span>
         </div>
       </section>

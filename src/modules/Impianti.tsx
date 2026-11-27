@@ -57,7 +57,7 @@ export function Impianti() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
-          5. Dimensionamento Impianti (CEI 64-8 / UNI 7129)
+          Dimensionamento Impianti (CEI 64-8 / UNI 7129)
         </h1>
         <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
           Dotazioni minime impianto elettrico, fabbisogno termico e adempimenti DM 37/2008. Commessa:{' '}
@@ -65,7 +65,6 @@ export function Impianti() {
         </p>
       </header>
 
-      {/* Parametri configurazione */}
       <section className="rounded-xl bg-white border border-zinc-300 p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -115,7 +114,6 @@ export function Impianti() {
         </div>
       </section>
 
-      {/* Schede risultati */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <section className="rounded-xl bg-zinc-950 text-zinc-100 border border-zinc-800 p-5 space-y-3">
           <div className="flex items-center gap-2 pb-2.5 border-b border-zinc-800">

@@ -9,7 +9,9 @@ export async function caricaDaSupabase() {
   const sb = getSupabase();
   if (!sb) return null;
 
-  const { data: { user } } = await sb.auth.getUser();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
   if (!user) return null;
 
   const { data: commesseRows, error } = await sb
@@ -30,7 +32,7 @@ export async function caricaDaSupabase() {
     subalterno: r.dati_catastali?.subalterno ?? '',
     categoriaCatastale: r.dati_catastali?.categoria ?? 'A/2',
     rendita: String(r.dati_catastali?.rendita ?? ''),
-    tipologia: r.tipologia_intervento ?? 'CILA',
+    tipologia: r.tipologia_intervento ?? 'Manutenzione Straordinaria CILA',
     tessutoPRG: r.tessuto_prg ?? '',
     cartaQualita: Boolean(r.carta_qualita),
     vincoloSoprintendenza: Boolean(r.vincoli_note),
@@ -49,9 +51,9 @@ export async function caricaDaSupabase() {
       id: v.id,
       nome: v.nome_vano,
       destinazione: v.destinazione_uso,
-      superficie: Number(v.superficie_calpestabile),
-      superfFinestrata: Number(v.superficie_finestrata_apribile),
-      altezzaMedia: Number(v.altezza_media_ponderale),
+      superficie: Number(v.superficie_calpestabile) || 0,
+      superfFinestrata: Number(v.superficie_finestrata_apribile) || 0,
+      altezzaMedia: Number(v.altezza_media_ponderale) || 2.7,
       vmc: (v.note_tecniche ?? '').includes('VMC'),
     });
   });
@@ -59,16 +61,29 @@ export async function caricaDaSupabase() {
   const voci: Record<string, VoceComputo[]> = {};
   (vociRes.data ?? []).forEach((vc) => {
     if (!voci[vc.commessa_id]) voci[vc.commessa_id] = [];
+    const codice = vc.codice_prezzario ?? '';
+    const categoria = vc.categoria_wbs ?? 'Opere edili';
+    const um = vc.unita_misura ?? 'mq';
+    const q = Number(vc.quantita) || 0;
+    const p = Number(vc.prezzo_unitario) || 0;
+    const sicurezza = Boolean(vc.is_sicurezza_non_ribassabile);
+
     voci[vc.commessa_id].push({
       id: vc.id,
-      codicePrezzario: vc.codice_prezzario,
-      wbs: vc.categoria_wbs,
-      descrizione: vc.descrizione,
-      um: vc.unita_misura,
-      quantita: Number(vc.quantita),
-      prezzoUnitario: Number(vc.prezzo_unitario),
-      oneriSicurezza: Boolean(vc.is_sicurezza_non_ribassabile),
-    } as VoceComputo);
+      codice,
+      codicePrezzario: codice,
+      categoria,
+      wbs: categoria,
+      descrizione: vc.descrizione ?? '',
+      unitaMisura: um,
+      um,
+      quantita: q,
+      prezzoUnitario: p,
+      prezzo: p,
+      importo: Number((q * p).toFixed(2)),
+      oneriSicurezza: sicurezza,
+      sicurezza,
+    });
   });
 
   return { commesse, vani, voci };
@@ -82,7 +97,9 @@ export async function sincronizzaCommessaSuSupabase(
   const sb = getSupabase();
   if (!sb) throw new Error('Client Supabase non configurato');
 
-  const { data: { user } } = await sb.auth.getUser();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
   if (!user) {
     throw new Error('Effettua il login per sincronizzare su Cloud');
   }
@@ -115,15 +132,15 @@ export async function sincronizzaCommessaSuSupabase(
       indirizzo: c.indirizzo,
       municipio: c.municipio,
       dati_catastali: {
-        foglio: c.foglio,
-        particella: c.particella,
-        subalterno: c.subalterno,
-        categoria: c.categoriaCatastale,
-        rendita: c.rendita,
+        foglio: c.foglio ?? '',
+        particella: c.particella ?? '',
+        subalterno: c.subalterno ?? '',
+        categoria: c.categoriaCatastale ?? 'A/2',
+        rendita: c.rendita ?? '',
       },
-      tipologia_intervento: c.tipologia,
-      tessuto_prg: c.tessutoPRG,
-      carta_qualita: c.cartaQualita,
+      tipologia_intervento: c.tipologia ?? 'Manutenzione Straordinaria CILA',
+      tessuto_prg: c.tessutoPRG ?? '',
+      carta_qualita: Boolean(c.cartaQualita),
       vincoli_note: c.vincoloSoprintendenza ? 'Vincolo D.Lgs 42/2004' : '',
     },
     { onConflict: 'id' }
@@ -142,10 +159,10 @@ export async function sincronizzaCommessaSuSupabase(
         id: isUuid(v.id) ? v.id : crypto.randomUUID(),
         commessa_id: safeCommessaId,
         nome_vano: v.nome || 'Vano senza nome',
-        destinazione_uso: v.destinazione,
-        superficie_calpestabile: v.superficie,
-        superficie_finestrata_apribile: v.superfFinestrata,
-        altezza_media_ponderale: v.altezzaMedia,
+        destinazione_uso: v.destinazione || 'Soggiorno',
+        superficie_calpestabile: Number(v.superficie) || 0,
+        superficie_finestrata_apribile: Number(v.superfFinestrata) || 0,
+        altezza_media_ponderale: Number(v.altezzaMedia) || 2.7,
         note_tecniche: v.vmc ? 'VMC attiva' : '',
       }))
     );
@@ -164,13 +181,13 @@ export async function sincronizzaCommessaSuSupabase(
         id: isUuid(vc.id) ? vc.id : crypto.randomUUID(),
         commessa_id: safeCommessaId,
         ordine: idx + 1,
-        codice_prezzario: vc.codicePrezzario,
-        categoria_wbs: vc.wbs,
-        descrizione: vc.descrizione,
-        unita_misura: vc.um,
-        quantita: vc.quantita,
-        prezzo_unitario: vc.prezzoUnitario,
-        is_sicurezza_non_ribassabile: vc.oneriSicurezza,
+        codice_prezzario: vc.codicePrezzario || vc.codice || 'A 01.01.001.a',
+        categoria_wbs: vc.wbs || vc.categoria || 'Opere edili',
+        descrizione: vc.descrizione || 'Voce di computo',
+        unita_misura: vc.um || vc.unitaMisura || 'mq',
+        quantita: Number(vc.quantita) || 0,
+        prezzo_unitario: Number(vc.prezzoUnitario ?? vc.prezzo) || 0,
+        is_sicurezza_non_ribassabile: Boolean(vc.oneriSicurezza ?? vc.sicurezza),
       }))
     );
     if (errVoci) throw new Error(`Voci computo: ${errVoci.message}`);

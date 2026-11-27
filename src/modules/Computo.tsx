@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, Calculator, Download, Sparkles } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Calculator,
+  Download,
+  FileSpreadsheet,
+  Sparkles,
+  Info,
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   useStore,
   useAttiva,
@@ -7,6 +16,8 @@ import {
   EMPTY_VANI,
   type VoceComputo,
 } from '@/lib/store';
+import { calcolaRiepilogoEconomico } from '@/lib/economia';
+import { esportaExcel } from '@/lib/excel';
 
 const fmtEuro = (n: number) =>
   new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(n);
@@ -19,63 +30,77 @@ const cellInput =
 const VOCI_LAZIO_PRESET: Array<Omit<VoceComputo, 'id'>> = [
   {
     codice: 'A 01.01.010.a',
-    descrizione: 'Demolizione di tramezzi in laterizio forato spessore fino a 12 cm, compreso carico e trasporto a discarica autorizzata',
+    descrizione:
+      'Demolizione di tramezzi in laterizio forato spessore fino a 12 cm, compreso carico e trasporto a discarica autorizzata',
     categoria: 'Demolizioni e Rimozioni',
     unitaMisura: 'mq',
+    um: 'mq',
     quantita: 28.0,
     prezzoUnitario: 24.5,
     oneriSicurezza: false,
   },
   {
     codice: 'A 01.02.015.b',
-    descrizione: 'Rimozione di pavimenti in ceramica, marmette o parquet, compreso sottostante massetto di allettamento fino a 5 cm',
+    descrizione:
+      'Rimozione di pavimenti in ceramica, marmette o parquet, compreso sottostante massetto di allettamento fino a 5 cm',
     categoria: 'Demolizioni e Rimozioni',
     unitaMisura: 'mq',
+    um: 'mq',
     quantita: 72.0,
     prezzoUnitario: 19.8,
     oneriSicurezza: false,
   },
   {
     codice: 'A 04.01.020.c',
-    descrizione: 'Muratura di tamponamento o tramezzatura in laterizio forato spessore 10 cm legata con malta bastarda',
+    descrizione:
+      'Muratura di tamponamento o tramezzatura in laterizio forato spessore 10 cm legata con malta bastarda',
     categoria: 'Murature e Divisori',
     unitaMisura: 'mq',
+    um: 'mq',
     quantita: 32.0,
     prezzoUnitario: 46.2,
     oneriSicurezza: false,
   },
   {
     codice: 'A 12.01.005.a',
-    descrizione: 'Fornitura e posa in opera di pavimentazione in gres porcellanato rettificato posato a colla, escluso massetto',
+    descrizione:
+      'Fornitura e posa in opera di pavimentazione in gres porcellanato rettificato posato a colla, escluso massetto',
     categoria: 'Pavimenti e Rivestimenti',
     unitaMisura: 'mq',
+    um: 'mq',
     quantita: 72.0,
     prezzoUnitario: 68.0,
     oneriSicurezza: false,
   },
   {
     codice: 'E 01.01.010.a',
-    descrizione: 'Rifacimento completo impianto elettrico sottotraccia per unità abitativa (CEI 64-8 Livello 1), punti luce e prese',
+    descrizione:
+      'Rifacimento completo impianto elettrico sottotraccia per unità abitativa (CEI 64-8 Livello 1), punti luce e prese',
     categoria: 'Impianti Elettrici e Speciali',
     unitaMisura: 'p.to',
+    um: 'p.to',
     quantita: 45,
     prezzoUnitario: 65.0,
     oneriSicurezza: false,
   },
   {
     codice: 'I 01.02.008.a',
-    descrizione: 'Impianto idrico-sanitario per bagno completo con tubazioni multistrato coibentate, scarichi in PP e collettori',
+    descrizione:
+      'Impianto idrico-sanitario per bagno completo con tubazioni multistrato coibentate, scarichi in PP e collettori',
     categoria: 'Impianti Idrico-Termici',
     unitaMisura: 'cad',
+    um: 'cad',
     quantita: 2,
     prezzoUnitario: 1850.0,
     oneriSicurezza: false,
   },
   {
     codice: 'S 01.01.001.a',
-    descrizione: 'Oneri per la sicurezza aziendali e apprestamenti di cantiere D.Lgs 81/2008 (non soggetti a ribasso)',
+    descrizione:
+      'Oneri per la sicurezza aziendali e apprestamenti di cantiere D.Lgs 81/2008 (non soggetti a ribasso)',
     categoria: 'Oneri Sicurezza',
     unitaMisura: 'a corpo',
+    um: 'a corpo',
     quantita: 1,
     prezzoUnitario: 2450.0,
     oneriSicurezza: true,
@@ -92,21 +117,18 @@ export function Computo() {
   const setVoci = useStore((s) => s.setVoci);
 
   const [filtroCategoria, setFiltroCategoria] = useState<string>('Tutte');
+  const [exportingXlsx, setExportingXlsx] = useState<boolean>(false);
 
-  const totali = useMemo(() => {
-    const lavori = voci
-      .filter((v) => !v.oneriSicurezza)
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
-    const oneri = voci
-      .filter((v) => Boolean(v.oneriSicurezza))
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
-    const mqTotali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0) || 72;
-    const totale = lavori + oneri;
+  const riepilogo = useMemo(() => {
+    const eco = calcolaRiepilogoEconomico(voci, vani);
+    const incidenzaMq =
+      eco.superficieTotale > 0 ? eco.totaleGenerale / eco.superficieTotale : 0;
     return {
-      lavori,
-      oneri,
-      totale,
-      incidenzaMq: mqTotali > 0 ? totale / mqTotali : 0,
+      eco,
+      lavori: eco.importoLavori,
+      oneri: eco.oneriSicurezza,
+      totale: eco.totaleGenerale,
+      incidenzaMq,
     };
   }, [voci, vani]);
 
@@ -115,28 +137,39 @@ export function Computo() {
   }
 
   const caricaPrezzarioBase = () => {
-    const nuove = VOCI_LAZIO_PRESET.map((item, idx) => ({
+    const nuove: VoceComputo[] = VOCI_LAZIO_PRESET.map((item, idx) => ({
       ...item,
       id: `lazio-${Date.now()}-${idx}`,
-      importo: (item.quantita ?? 0) * (item.prezzoUnitario ?? 0),
+      um: item.um || item.unitaMisura || 'mq',
+      importo: Number(((item.quantita ?? 0) * (item.prezzoUnitario ?? 0)).toFixed(2)),
     }));
     setVoci(commessa.id, nuove);
   };
 
   const esportaCSV = () => {
-    const intestazione = ['Codice Prezzario', 'Categoria', 'Descrizione', 'U.M.', 'Quantità', 'Prezzo Unitario', 'Importo', 'Oneri Sicurezza'];
+    const intestazione = [
+      'Codice Prezzario',
+      'Categoria',
+      'Descrizione',
+      'U.M.',
+      'Quantità',
+      'Prezzo Unitario',
+      'Importo',
+      'Oneri Sicurezza',
+    ];
     const righe = voci.map((v) => {
       const q = Number(v.quantita) || 0;
-      const p = Number(v.prezzoUnitario) || 0;
+      const p = Number(v.prezzoUnitario ?? v.prezzo) || 0;
+      const isSic = Boolean(v.oneriSicurezza ?? v.sicurezza);
       return [
-        `"${(v.codice ?? '').replace(/"/g, '""')}"`,
-        `"${(v.categoria ?? '').replace(/"/g, '""')}"`,
+        `"${(v.codice ?? v.codicePrezzario ?? '').replace(/"/g, '""')}"`,
+        `"${(v.categoria ?? v.wbs ?? 'Opere edili').replace(/"/g, '""')}"`,
         `"${(v.descrizione ?? '').replace(/"/g, '""')}"`,
-        `"${v.unitaMisura ?? 'mq'}"`,
+        `"${v.unitaMisura ?? v.um ?? 'mq'}"`,
         q.toFixed(2).replace('.', ','),
         p.toFixed(2).replace('.', ','),
         (q * p).toFixed(2).replace('.', ','),
-        v.oneriSicurezza ? 'SI' : 'NO',
+        isSic ? 'SI' : 'NO',
       ].join(';');
     });
     const csv = [intestazione.join(';'), ...righe].join('\n');
@@ -149,11 +182,77 @@ export function Computo() {
     URL.revokeObjectURL(url);
   };
 
-  const categorie = ['Tutte', ...Array.from(new Set(voci.map((v) => v.categoria || 'Opere edili')))];
+  const handleEsportaExcel = async () => {
+    setExportingXlsx(true);
+    try {
+      const result = await (esportaExcel as unknown as (
+        c: typeof commessa,
+        va: typeof vani,
+        vo: typeof voci
+      ) => unknown)(commessa, vani, voci);
+
+      const fileName = `Computo_Lazio_${commessa.codice}.xlsx`;
+
+      if (result instanceof Blob) {
+        const url = URL.createObjectURL(result);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      if (result && typeof result === 'object' && 'Sheets' in result) {
+        XLSX.writeFile(result as XLSX.WorkBook, fileName);
+        return;
+      }
+
+      // Fallback locale se esportaExcel non esegue direttamente writeFile
+      const wb = XLSX.utils.book_new();
+      const righeComputo = voci.map((v) => {
+        const q = Number(v.quantita) || 0;
+        const p = Number(v.prezzoUnitario ?? v.prezzo) || 0;
+        const isSic = Boolean(v.oneriSicurezza ?? v.sicurezza);
+        return {
+          Codice: v.codice ?? v.codicePrezzario ?? '',
+          Categoria: v.categoria ?? v.wbs ?? 'Opere edili',
+          Descrizione: v.descrizione ?? '',
+          UM: v.unitaMisura ?? v.um ?? 'mq',
+          Quantita: q,
+          PrezzoUnitario: p,
+          Importo: Number((q * p).toFixed(2)),
+          Sicurezza: isSic ? 'SI' : 'NO',
+        };
+      });
+      const wsComputo = XLSX.utils.json_to_sheet(righeComputo);
+      XLSX.utils.book_append_sheet(wb, wsComputo, 'Computo Metrico');
+
+      const righeVani = vani.map((vn) => ({
+        Vano: vn.nome,
+        Destinazione: vn.destinazione,
+        Superficie_mq: Number(vn.superficie) || 0,
+        Sup_Finestrata_mq: Number(vn.superfFinestrata) || 0,
+        Altezza_m: Number(vn.altezzaMedia) || 0,
+        VMC: vn.vmc ? 'SI' : 'NO',
+      }));
+      const wsVani = XLSX.utils.json_to_sheet(righeVani);
+      XLSX.utils.book_append_sheet(wb, wsVani, 'Abaco Vani');
+
+      XLSX.writeFile(wb, fileName);
+    } finally {
+      setExportingXlsx(false);
+    }
+  };
+
+  const categorie = [
+    'Tutte',
+    ...Array.from(new Set(voci.map((v) => v.categoria || v.wbs || 'Opere edili'))),
+  ];
   const vociFiltrate =
     filtroCategoria === 'Tutte'
       ? voci
-      : voci.filter((v) => (v.categoria || 'Opere edili') === filtroCategoria);
+      : voci.filter((v) => (v.categoria || v.wbs || 'Opere edili') === filtroCategoria);
 
   return (
     <div className="space-y-4">
@@ -179,6 +278,15 @@ export function Computo() {
           </button>
           <button
             type="button"
+            onClick={() => void handleEsportaExcel()}
+            disabled={exportingXlsx || (voci.length === 0 && vani.length === 0)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 disabled:opacity-40 transition-colors"
+          >
+            <FileSpreadsheet size={13} />
+            <span>{exportingXlsx ? 'Esportazione...' : 'Esporta Excel (.xlsx)'}</span>
+          </button>
+          <button
+            type="button"
             onClick={esportaCSV}
             disabled={voci.length === 0}
             className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"
@@ -189,31 +297,50 @@ export function Computo() {
         </div>
       </header>
 
+      {riepilogo.eco.modalita === 'stima' && (
+        <div className="rounded-xl bg-amber-50 border border-amber-300 px-4 py-3 text-xs text-amber-950 flex items-start gap-2.5">
+          <Info size={15} className="text-amber-700 shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            Nessuna voce analitica inserita in questo computo: nel pannello laterale è attiva la{' '}
+            <strong>stima parametrica preliminare</strong> su{' '}
+            <strong className="font-mono">{riepilogo.eco.superficieTotale.toFixed(1)} m²</strong>{' '}
+            ({fmtEuro(riepilogo.totale)} IVA escl.). Aggiungi una voce o clicca su{' '}
+            <em>&ldquo;Popola voci tipo Lazio&rdquo;</em> per passare al computo analitico.
+          </p>
+        </div>
+      )}
+
       {/* Riepilogo sintetico */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl bg-zinc-950 text-white border border-zinc-800 p-4">
           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-            Lavori a Misura
+            {riepilogo.eco.modalita === 'stima' ? 'Lavori Stimati (Parametrici)' : 'Lavori a Misura'}
           </span>
-          <p className="text-xl font-mono font-bold mt-1 tabular-nums">{fmtEuro(totali.lavori)}</p>
+          <p className="text-xl font-mono font-bold mt-1 tabular-nums">
+            {fmtEuro(riepilogo.lavori)}
+          </p>
         </div>
         <div className="rounded-xl bg-zinc-950 text-white border border-zinc-800 p-4">
           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
             Oneri Sicurezza (D.Lgs 81/08)
           </span>
           <p className="text-xl font-mono font-bold text-amber-300 mt-1 tabular-nums">
-            {fmtEuro(totali.oneri)}
+            {fmtEuro(riepilogo.oneri)}
           </p>
         </div>
         <div className="rounded-xl bg-zinc-950 text-white border border-zinc-800 p-4">
           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-            Totale Computo (IVA escl.)
+            {riepilogo.eco.modalita === 'stima'
+              ? 'Totale Stimato (IVA escl.)'
+              : 'Totale Computo (IVA escl.)'}
           </span>
           <p className="text-xl font-mono font-bold text-emerald-300 mt-1 tabular-nums">
-            {fmtEuro(totali.totale)}
+            {fmtEuro(riepilogo.totale)}
           </p>
           <p className="text-[11px] font-mono text-zinc-400 mt-0.5">
-            Incidenza: {fmtEuro(totali.incidenzaMq)}/mq
+            {riepilogo.eco.superficieTotale > 0
+              ? `Incidenza: ${fmtEuro(riepilogo.incidenzaMq)}/mq (${riepilogo.eco.superficieTotale.toFixed(1)} m²)`
+              : 'Incidenza: —'}
           </p>
         </div>
       </div>
@@ -245,7 +372,9 @@ export function Computo() {
             <thead>
               <tr className="bg-zinc-950 text-zinc-200 text-[11px] font-mono uppercase tracking-wider">
                 <th className="text-left font-medium px-3 py-2.5 w-32">Codice</th>
-                <th className="text-left font-medium px-3 py-2.5 min-w-[240px]">Descrizione Lavorazione</th>
+                <th className="text-left font-medium px-3 py-2.5 min-w-[240px]">
+                  Descrizione Lavorazione
+                </th>
                 <th className="text-center font-medium px-3 py-2.5 w-20">U.M.</th>
                 <th className="text-right font-medium px-3 py-2.5 w-24">Quantità</th>
                 <th className="text-right font-medium px-3 py-2.5 w-28">Prezzo €</th>
@@ -257,16 +386,19 @@ export function Computo() {
             <tbody className="divide-y divide-zinc-200">
               {vociFiltrate.map((voce) => {
                 const q = Number(voce.quantita) || 0;
-                const p = Number(voce.prezzoUnitario) || 0;
+                const p = Number(voce.prezzoUnitario ?? voce.prezzo) || 0;
                 const imp = q * p;
+                const isSic = Boolean(voce.oneriSicurezza ?? voce.sicurezza);
                 return (
                   <tr key={voce.id} className="hover:bg-zinc-50 transition-colors">
                     <td className="px-1 py-0.5">
                       <input
                         className={`${cellInput} font-mono text-xs`}
-                        value={voce.codice ?? ''}
+                        value={voce.codice ?? voce.codicePrezzario ?? ''}
                         placeholder="A 01.01..."
-                        onChange={(e) => aggiornaVoce(commessa.id, voce.id, { codice: e.target.value })}
+                        onChange={(e) =>
+                          aggiornaVoce(commessa.id, voce.id, { codice: e.target.value })
+                        }
                       />
                     </td>
                     <td className="px-1 py-0.5">
@@ -282,7 +414,7 @@ export function Computo() {
                     <td className="px-1 py-0.5">
                       <input
                         className={`${cellInput} text-center font-mono text-xs`}
-                        value={voce.unitaMisura ?? 'mq'}
+                        value={voce.unitaMisura ?? voce.um ?? 'mq'}
                         onChange={(e) =>
                           aggiornaVoce(commessa.id, voce.id, { unitaMisura: e.target.value })
                         }
@@ -306,7 +438,7 @@ export function Computo() {
                         min={0}
                         step={0.01}
                         className={`${cellInput} text-right tabular-nums`}
-                        value={voce.prezzoUnitario ?? ''}
+                        value={voce.prezzoUnitario ?? voce.prezzo ?? ''}
                         onChange={(e) =>
                           aggiornaVoce(commessa.id, voce.id, {
                             prezzoUnitario: num(e.target.value),
@@ -320,7 +452,7 @@ export function Computo() {
                     <td className="px-2 py-1.5 text-center">
                       <input
                         type="checkbox"
-                        checked={Boolean(voce.oneriSicurezza)}
+                        checked={isSic}
                         onChange={(e) =>
                           aggiornaVoce(commessa.id, voce.id, { oneriSicurezza: e.target.checked })
                         }

@@ -3,6 +3,7 @@ import {
   Building2,
   SunMedium,
   LayoutGrid,
+  Zap,
   Calculator,
   CalendarRange,
   FileCheck2,
@@ -20,6 +21,7 @@ export type SectionId =
   | 'due-diligence'
   | 'audit-rai'
   | 'abachi'
+  | 'impianti'
   | 'computo'
   | 'cronoprogramma'
   | 'bozze'
@@ -46,10 +48,23 @@ const WORKFLOW_ITEMS: NavItemConfig[] = [
   { id: 'due-diligence', stepNumber: 1, label: 'Due Diligence & PRG', icon: Building2 },
   { id: 'audit-rai', stepNumber: 2, label: 'Audit & RAI', icon: SunMedium },
   { id: 'abachi', stepNumber: 3, label: 'Abachi Vani & Infissi', icon: LayoutGrid },
+  { id: 'impianti', label: 'Impianti CEI 64-8 / DM 37', icon: Zap },
   { id: 'computo', stepNumber: 4, label: 'Computo Metrico', icon: Calculator },
   { id: 'cronoprogramma', stepNumber: 5, label: 'Cronoprogramma', icon: CalendarRange },
   { id: 'bozze', stepNumber: 6, label: 'Relazione SUET', icon: FileCheck2 },
 ];
+
+const STEP_INDICES_BY_ITEM: Record<SectionId, number | null> = {
+  'due-diligence': 0,
+  'audit-rai': 1,
+  abachi: 2,
+  impianti: null,
+  computo: 3,
+  cronoprogramma: 4,
+  bozze: 5,
+  documenti: null,
+  autolisp: null,
+};
 
 const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false];
 
@@ -73,12 +88,12 @@ export function Sidebar({
   const [nuovoIndirizzo, setNuovoIndirizzo] = useState('Via del Boschetto, 72, 00184 Roma RM');
 
   const steps = useMemo(
-    () => WORKFLOW_ITEMS.map((_, idx) => Boolean(rawSteps?.[idx] ?? EMPTY_STEPS[idx])),
+    () => Array.from({ length: 6 }, (_, idx) => Boolean(rawSteps?.[idx] ?? EMPTY_STEPS[idx])),
     [rawSteps]
   );
 
   const completati = steps.filter(Boolean).length;
-  const pct = Math.round((completati / WORKFLOW_ITEMS.length) * 100);
+  const pct = Math.round((completati / 6) * 100);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -242,10 +257,11 @@ export function Sidebar({
             Workflow Commessa
           </div>
 
-          {WORKFLOW_ITEMS.map((item, idx) => {
+          {WORKFLOW_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
-            const isDone = steps[idx];
+            const stepIdx = STEP_INDICES_BY_ITEM[item.id];
+            const isDone = stepIdx !== null ? steps[stepIdx] : false;
 
             return (
               <button
@@ -268,7 +284,7 @@ export function Sidebar({
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
                     }`}
                   >
-                    {item.stepNumber}
+                    {item.stepNumber ?? '•'}
                   </span>
                   <Icon
                     size={14}
@@ -277,16 +293,18 @@ export function Sidebar({
                   <span className="text-xs truncate">{item.label}</span>
                 </span>
 
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isDone
-                      ? 'bg-emerald-400'
-                      : isActive
-                        ? 'bg-zinc-950'
-                        : 'bg-zinc-700'
-                  }`}
-                  title={isDone ? 'Step completato' : 'Step da completare'}
-                />
+                {stepIdx !== null && (
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isDone
+                        ? 'bg-emerald-400'
+                        : isActive
+                          ? 'bg-zinc-950'
+                          : 'bg-zinc-700'
+                    }`}
+                    title={isDone ? 'Step completato' : 'Step da completare'}
+                  />
+                )}
               </button>
             );
           })}

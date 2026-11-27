@@ -1,53 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type {
+  Commessa,
+  Vano,
+  VoceComputo,
+  DettagliProcedimento,
+} from './types';
 
-export interface Commessa {
-  id: string;
-  codice: string;
-  titolo: string;
-  indirizzo: string;
-  municipio?: string;
-  tipologia?: string;
-  tessutoPRG?: string;
-  foglio?: string;
-  particella?: string;
-  subalterno?: string;
-  categoriaCatastale?: string;
-  cartaQualita?: boolean;
-  vincoloSoprintendenza?: boolean;
-  dettagliProcedimento?: Record<string, string | undefined>;
-}
-
-export interface Vano {
-  id: string;
-  nome: string;
-  destinazione: string;
-  superficie: number;
-  superfFinestrata: number;
-  altezzaMedia: number;
-  vmc?: boolean;
-  note?: string;
-}
-
-export interface VoceComputo {
-  id: string;
-  codice: string;
-  descrizione: string;
-  categoria?: string;
-  unitaMisura: string;
-  um: string;
-  quantita: number;
-  prezzoUnitario: number;
-  prezzo: number;
-  importo?: number;
-  oneriSicurezza?: boolean;
-  sicurezza?: boolean;
-}
+export type { Commessa, Vano, VoceComputo, DettagliProcedimento };
 
 export interface CreaCommessaInput {
   codice?: string;
   titolo: string;
-  indirizzo: string;
+  indirizzo?: string;
   municipio?: string;
   tipologia?: string;
   tessutoPRG?: string;
@@ -55,8 +20,10 @@ export interface CreaCommessaInput {
   particella?: string;
   subalterno?: string;
   categoriaCatastale?: string;
+  rendita?: string;
   cartaQualita?: boolean;
   vincoloSoprintendenza?: boolean;
+  dettagliProcedimento?: DettagliProcedimento;
 }
 
 export interface RisultatoImportSynaps {
@@ -92,6 +59,7 @@ const INITIAL_COMMESSE: Commessa[] = [
     particella: '112',
     subalterno: '7',
     categoriaCatastale: 'A/2',
+    rendita: '',
     cartaQualita: false,
     vincoloSoprintendenza: false,
   },
@@ -101,7 +69,7 @@ const VANI_ESEMPIO_72MQ: Vano[] = [
   {
     id: 'vano-72-soggiorno',
     nome: 'Soggiorno / Pranzo',
-    destinazione: 'Soggiorno',
+    destinazione: 'Soggiorno / Pranzo',
     superficie: 24.0,
     superfFinestrata: 3.4,
     altezzaMedia: 3.1,
@@ -111,7 +79,7 @@ const VANI_ESEMPIO_72MQ: Vano[] = [
   {
     id: 'vano-72-cucina',
     nome: 'Cucina Abitabile',
-    destinazione: 'Cucina abitabile',
+    destinazione: 'Cucina / Tinello',
     superficie: 11.0,
     superfFinestrata: 1.6,
     altezzaMedia: 3.1,
@@ -121,7 +89,7 @@ const VANI_ESEMPIO_72MQ: Vano[] = [
   {
     id: 'vano-72-matrimoniale',
     nome: 'Camera Matrimoniale',
-    destinazione: 'Camera matrimoniale',
+    destinazione: 'Camera da letto',
     superficie: 15.0,
     superfFinestrata: 2.2,
     altezzaMedia: 3.1,
@@ -141,7 +109,7 @@ const VANI_ESEMPIO_72MQ: Vano[] = [
   {
     id: 'vano-72-bagno1',
     nome: 'Bagno Principale',
-    destinazione: 'Bagno',
+    destinazione: 'Bagno / WC',
     superficie: 6.5,
     superfFinestrata: 0.9,
     altezzaMedia: 2.7,
@@ -151,7 +119,7 @@ const VANI_ESEMPIO_72MQ: Vano[] = [
   {
     id: 'vano-72-bagno2',
     nome: 'Bagno di Servizio / Lavanderia',
-    destinazione: 'Bagno cieco',
+    destinazione: 'Ripostiglio / Lavanderia',
     superficie: 5.5,
     superfFinestrata: 0.0,
     altezzaMedia: 2.7,
@@ -172,13 +140,19 @@ function buildVoce(
 ): VoceComputo {
   const q = Number(quantita) || 0;
   const p = Number(prezzoUnitario) || 0;
+  const codeClean = codice.trim();
+  const catClean = categoria.trim() || 'Opere edili';
+  const umClean = unitaMisura.trim() || 'mq';
+
   return {
     id,
-    codice,
+    codice: codeClean,
+    codicePrezzario: codeClean,
     descrizione,
-    categoria,
-    unitaMisura,
-    um: unitaMisura,
+    categoria: catClean,
+    wbs: catClean,
+    unitaMisura: umClean,
+    um: umClean,
     quantita: q,
     prezzoUnitario: p,
     prezzo: p,
@@ -361,16 +335,16 @@ function normalizzaRecordInVano(raw: Record<string, unknown>, index: number): Va
     typeof destCandidate === 'string' && destCandidate.trim()
       ? destCandidate.trim()
       : /bagno|wc|servizio/i.test(nome)
-        ? superfFinestrata > 0
-          ? 'Bagno'
-          : 'Bagno cieco'
+        ? 'Bagno / WC'
         : /cucina|cottura/i.test(nome)
-          ? 'Cucina abitabile'
-          : /letto|camera|matrimoniale|singola/i.test(nome)
-            ? 'Camera'
-            : /soggiorno|pranzo|living|salone/i.test(nome)
-              ? 'Soggiorno'
-              : 'Residenziale';
+          ? 'Cucina / Tinello'
+          : /singola/i.test(nome)
+            ? 'Camera singola'
+            : /letto|camera|matrimoniale/i.test(nome)
+              ? 'Camera da letto'
+              : /soggiorno|pranzo|living|salone/i.test(nome)
+                ? 'Soggiorno / Pranzo'
+                : 'Studio';
 
   return {
     id:
@@ -554,6 +528,7 @@ interface ArchinextState {
     vanoIdOrPatch: string | Partial<Vano>,
     maybePatch?: Partial<Vano>
   ) => void;
+  eliminaVano: (commessaIdOrVanoId: string, maybeVanoId?: string) => void;
   rimuoviVano: (commessaIdOrVanoId: string, maybeVanoId?: string) => void;
   deleteVano: (commessaIdOrVanoId: string, maybeVanoId?: string) => void;
   removeVano: (commessaIdOrVanoId: string, maybeVanoId?: string) => void;
@@ -734,7 +709,7 @@ export const useStore = create<ArchinextState>()(
         const nuovoVano: Vano = {
           id: dati?.id || `vano-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           nome: dati?.nome?.trim() || `Vano ${esistenti.length + 1}`,
-          destinazione: dati?.destinazione?.trim() || 'Soggiorno',
+          destinazione: dati?.destinazione?.trim() || 'Soggiorno / Pranzo',
           superficie: dati?.superficie !== undefined ? Number(dati.superficie) : 14,
           superfFinestrata:
             dati?.superfFinestrata !== undefined ? Number(dati.superfFinestrata) : 2.0,
@@ -791,6 +766,8 @@ export const useStore = create<ArchinextState>()(
         dati: Partial<VoceComputo> | undefined,
         fallbackId: string
       ): VoceComputo => {
+        const codice = dati?.codice?.trim() || dati?.codicePrezzario?.trim() || 'A 01.01.001.a';
+        const categoria = dati?.categoria?.trim() || dati?.wbs?.trim() || 'Opere edili';
         const um = dati?.unitaMisura?.trim() || dati?.um?.trim() || 'mq';
         const qta = dati?.quantita !== undefined ? Number(dati.quantita) : 1;
         const prezzo =
@@ -803,13 +780,13 @@ export const useStore = create<ArchinextState>()(
 
         return buildVoce(
           dati?.id || fallbackId,
-          dati?.codice?.trim() || 'A 01.01.001.a',
+          codice,
           dati?.descrizione?.trim() || 'Nuova lavorazione Prezzario Lazio',
           um,
           qta,
           prezzo,
           sicurezza,
-          dati?.categoria?.trim() || 'Opere edili'
+          categoria
         );
       };
 
@@ -876,6 +853,18 @@ export const useStore = create<ArchinextState>()(
             ...state.voci,
             [targetId]: (state.voci[targetId] ?? []).map((item) => {
               if (item.id !== voceId) return item;
+              const nextCodice =
+                patch.codice !== undefined
+                  ? patch.codice
+                  : patch.codicePrezzario !== undefined
+                    ? patch.codicePrezzario
+                    : item.codice;
+              const nextCategoria =
+                patch.categoria !== undefined
+                  ? patch.categoria
+                  : patch.wbs !== undefined
+                    ? patch.wbs
+                    : item.categoria ?? 'Opere edili';
               const nextUm = patch.unitaMisura ?? patch.um ?? item.unitaMisura;
               const nextQta =
                 patch.quantita !== undefined ? Number(patch.quantita) : item.quantita;
@@ -890,12 +879,15 @@ export const useStore = create<ArchinextState>()(
                   ? Boolean(patch.oneriSicurezza)
                   : patch.sicurezza !== undefined
                     ? Boolean(patch.sicurezza)
-                    : item.oneriSicurezza;
+                    : Boolean(item.oneriSicurezza);
 
               return {
                 ...item,
                 ...patch,
-                categoria: patch.categoria ?? item.categoria ?? 'Opere edili',
+                codice: nextCodice,
+                codicePrezzario: nextCodice,
+                categoria: nextCategoria,
+                wbs: nextCategoria,
                 unitaMisura: nextUm,
                 um: nextUm,
                 quantita: nextQta,
@@ -1111,16 +1103,18 @@ export const useStore = create<ArchinextState>()(
             id,
             codice,
             titolo: input.titolo.trim() || 'Nuova Commessa',
-            indirizzo: input.indirizzo.trim() || 'Via del Boschetto, 72, 00184 Roma RM',
+            indirizzo: input.indirizzo?.trim() ?? '',
             municipio: input.municipio?.trim() || 'Municipio I',
             tipologia: input.tipologia || 'Manutenzione Straordinaria CILA',
             tessutoPRG: input.tessutoPRG || 'T1 — Tessuti di origine medievale',
-            foglio: input.foglio?.trim(),
-            particella: input.particella?.trim(),
-            subalterno: input.subalterno?.trim(),
+            foglio: input.foglio?.trim() ?? '',
+            particella: input.particella?.trim() ?? '',
+            subalterno: input.subalterno?.trim() ?? '',
             categoriaCatastale: input.categoriaCatastale?.trim() || 'A/2',
+            rendita: input.rendita?.trim() ?? '',
             cartaQualita: Boolean(input.cartaQualita),
             vincoloSoprintendenza: Boolean(input.vincoloSoprintendenza),
+            dettagliProcedimento: input.dettagliProcedimento,
           };
 
           set((state) => ({
@@ -1176,6 +1170,7 @@ export const useStore = create<ArchinextState>()(
         addVano: handleAggiungiVano,
         aggiornaVano: handleAggiornaVano,
         updateVano: handleAggiornaVano,
+        eliminaVano: handleRimuoviVano,
         rimuoviVano: handleRimuoviVano,
         deleteVano: handleRimuoviVano,
         removeVano: handleRimuoviVano,

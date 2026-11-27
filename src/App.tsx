@@ -4,6 +4,7 @@ import { Sidebar, type SectionId } from '@/components/Sidebar';
 import { CockpitPanel } from '@/components/CockpitPanel';
 import { AuthModal } from '@/components/AuthModal';
 import { DueDiligence } from '@/modules/DueDiligence';
+import { Impianti } from '@/modules/Impianti';
 import { Cronoprogramma } from '@/modules/Cronoprogramma';
 import { Bozze } from '@/modules/Bozze';
 import { CassettoDocumentale } from '@/modules/CassettoDocumentale';
@@ -184,6 +185,8 @@ export function App() {
         return <AuditRAIModule key={sectionKey} />;
       case 'abachi':
         return <AbachiModule key={sectionKey} />;
+      case 'impianti':
+        return <Impianti key={sectionKey} />;
       case 'computo':
         return <ComputoModule key={sectionKey} />;
       case 'cronoprogramma':
