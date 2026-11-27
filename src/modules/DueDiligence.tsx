@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
   CheckCircle2,
@@ -12,6 +12,8 @@ import {
   SlidersHorizontal,
   Plus,
   Minus,
+  Wand2,
+  Search,
 } from 'lucide-react';
 import { useStore, useAttiva } from '@/lib/store';
 
@@ -71,16 +73,175 @@ interface GeoPoint {
   lat: number;
   lon: number;
   label: string;
+  postcode?: string;
+  district?: string;
+}
+
+interface SuggerimentoRoma {
+  municipio: string | null;
+  tessutoSuggerito: string | null;
+  zonaRilevata: string | null;
+}
+
+const CAP_TO_MUNICIPIO: Record<string, string> = {
+  '00184': 'Municipio I',
+  '00185': 'Municipio I',
+  '00186': 'Municipio I',
+  '00187': 'Municipio I',
+  '00153': 'Municipio I',
+  '00192': 'Municipio I',
+  '00193': 'Municipio I',
+  '00195': 'Municipio I',
+  '00196': 'Municipio II',
+  '00197': 'Municipio II',
+  '00198': 'Municipio II',
+  '00199': 'Municipio II',
+  '00161': 'Municipio II',
+  '00162': 'Municipio II',
+  '00137': 'Municipio III',
+  '00138': 'Municipio III',
+  '00139': 'Municipio III',
+  '00141': 'Municipio III',
+  '00156': 'Municipio IV',
+  '00157': 'Municipio IV',
+  '00158': 'Municipio IV',
+  '00159': 'Municipio IV',
+  '00171': 'Municipio V',
+  '00172': 'Municipio V',
+  '00176': 'Municipio V',
+  '00177': 'Municipio V',
+  '00132': 'Municipio VI',
+  '00133': 'Municipio VI',
+  '00173': 'Municipio VII',
+  '00174': 'Municipio VII',
+  '00175': 'Municipio VII',
+  '00178': 'Municipio VII',
+  '00179': 'Municipio VII',
+  '00181': 'Municipio VII',
+  '00182': 'Municipio VII',
+  '00183': 'Municipio VII',
+  '00142': 'Municipio VIII',
+  '00145': 'Municipio VIII',
+  '00147': 'Municipio VIII',
+  '00154': 'Municipio VIII',
+  '00127': 'Municipio IX',
+  '00128': 'Municipio IX',
+  '00134': 'Municipio IX',
+  '00143': 'Municipio IX',
+  '00144': 'Municipio IX',
+  '00121': 'Municipio X',
+  '00122': 'Municipio X',
+  '00124': 'Municipio X',
+  '00125': 'Municipio X',
+  '00126': 'Municipio X',
+  '00146': 'Municipio XI',
+  '00148': 'Municipio XI',
+  '00149': 'Municipio XI',
+  '00151': 'Municipio XII',
+  '00152': 'Municipio XII',
+  '00163': 'Municipio XII',
+  '00164': 'Municipio XII',
+  '00165': 'Municipio XIII',
+  '00166': 'Municipio XIII',
+  '00167': 'Municipio XIII',
+  '00168': 'Municipio XIV',
+  '00135': 'Municipio XIV',
+  '00136': 'Municipio XIV',
+  '00188': 'Municipio XV',
+  '00189': 'Municipio XV',
+  '00191': 'Municipio XV',
+};
+
+function analizzaLocalizzazioneRoma(
+  indirizzo: string,
+  geo: GeoPoint
+): SuggerimentoRoma {
+  const testo = `${indirizzo} ${geo.label} ${geo.district ?? ''}`.toLowerCase();
+  const capMatch = `${indirizzo} ${geo.postcode ?? ''}`.match(/\b(00\d{3})\b/);
+  const cap = capMatch ? capMatch[1] : undefined;
+
+  let municipio: string | null = null;
+
+  const munEsplicito = testo.match(
+    /\bmunicipio\s+(i{1,3}|iv|v|vi|vii|viii|ix|x|xi|xii|xiii|xiv|xv|\d+)\b/i
+  );
+  if (munEsplicito) {
+    municipio = `Municipio ${munEsplicito[1].toUpperCase()}`;
+  } else if (cap && CAP_TO_MUNICIPIO[cap]) {
+    municipio = CAP_TO_MUNICIPIO[cap];
+  } else if (
+    /boschetto|monti|termini|esquilino|centro storico|navona|pantheon|trevi|trastevere|prati|testaccio|celio|campitelli|colonna|borgo/.test(
+      testo
+    )
+  ) {
+    municipio = 'Municipio I';
+  } else if (/parioli|nomentano|salario|trieste|flaminio|pinciano|san lorenzo|bologna/.test(testo)) {
+    municipio = 'Municipio II';
+  } else if (/montesacro|talenti|bufalotta|fidene|tufello|conca d'oro/.test(testo)) {
+    municipio = 'Municipio III';
+  } else if (/tiburtin|pietralata|casal bruciato|san basilio|tor cervara/.test(testo)) {
+    municipio = 'Municipio IV';
+  } else if (/prenestin|pigneto|centocelle|tor pignattara|alessandrin/.test(testo)) {
+    municipio = 'Municipio V';
+  } else if (/tor bella monaca|tor vergata|borghesiana|finocchio|lunghezza/.test(testo)) {
+    municipio = 'Municipio VI';
+  } else if (/appio|tuscolan|san giovanni|cinecitt|quadraro|don bosco|capannelle/.test(testo)) {
+    municipio = 'Municipio VII';
+  } else if (/garbatella|ostiense|san paolo|arvalia|montagnola|ardeatin|navigatori/.test(testo)) {
+    municipio = 'Municipio VIII';
+  } else if (/\beur\b|laurentin|torrino|mostacciano|spinaceto|trigoria/.test(testo)) {
+    municipio = 'Municipio IX';
+  } else if (/ostia|acilia|axa|casal palocco|infernetto|dragona/.test(testo)) {
+    municipio = 'Municipio X';
+  } else if (/marconi|portuense|magliana|corviale|trullo/.test(testo)) {
+    municipio = 'Municipio XI';
+  } else if (/monteverde|gianicolense|bravetta|pisana|aurelia antica/.test(testo)) {
+    municipio = 'Municipio XII';
+  } else if (/aurelio|boccea|valle aurelia|casalotti/.test(testo)) {
+    municipio = 'Municipio XIII';
+  } else if (/balduina|trionfale|monte mario|primavalle|ottavia/.test(testo)) {
+    municipio = 'Municipio XIV';
+  } else if (/ponte milvio|vigna clara|cassia|flaminia|corso francia|tomba di nerone|labaro/.test(testo)) {
+    municipio = 'Municipio XV';
+  }
+
+  let tessutoSuggerito: string | null = null;
+  if (
+    /boschetto|monti|centro storico|navona|pantheon|trevi|trastevere|campitelli|colonna|borgo|rione/.test(
+      testo
+    )
+  ) {
+    tessutoSuggerito = 'T1 — Tessuti di origine medievale (verifica Città Storica su Formaps)';
+  } else if (/prati|esquilino|testaccio|salario|trieste|nomentano|san giovanni|appio|monteverde/.test(testo)) {
+    tessutoSuggerito = 'T2 / T3 — Tessuti otto-novecenteschi o Città Consolidata';
+  } else if (/\beur\b|torrino|mostacciano|talenti|bufalotta/.test(testo)) {
+    tessutoSuggerito = 'T3 / T5 — Tessuti novecenteschi a lottizzazione o espansione recente';
+  }
+
+  const zonaRilevata = geo.district || geo.label || null;
+  return { municipio, tessutoSuggerito, zonaRilevata };
 }
 
 function getFallbackCoords(indirizzo: string): GeoPoint {
   const clean = indirizzo.trim();
   const lower = clean.toLowerCase();
   if (lower.includes('boschetto')) {
-    return { lat: 41.8955, lon: 12.4912, label: 'Rione Monti · Via del Boschetto' };
+    return {
+      lat: 41.8955,
+      lon: 12.4912,
+      label: 'Rione Monti · Via del Boschetto',
+      postcode: '00184',
+      district: 'Rione Monti',
+    };
   }
   if (lower.includes('termini')) {
-    return { lat: 41.9009, lon: 12.502, label: 'Roma Termini · Esquilino' };
+    return {
+      lat: 41.9009,
+      lon: 12.502,
+      label: 'Roma Termini · Esquilino',
+      postcode: '00185',
+      district: 'Esquilino',
+    };
   }
   return { lat: 41.8902, lon: 12.4922, label: clean || 'Roma Capitale' };
 }
@@ -108,24 +269,65 @@ export function DueDiligence() {
   const toggleStep = useStore((s) => s.toggleStep);
   const [mostraMappa, setMostraMappa] = useState(true);
   const [zoomSpan, setZoomSpan] = useState(0.0014);
+  const [avvisoSuggerimento, setAvvisoSuggerimento] = useState<string | null>(null);
 
-  const indirizzoSafe = commessa?.indirizzo?.trim() || 'Via del Boschetto, 72, 00184 Roma RM';
+  const indirizzoRaw = commessa?.indirizzo ?? '';
+  const indirizzoSafe = indirizzoRaw.trim() || 'Via del Boschetto, 72, 00184 Roma RM';
   const [coords, setCoords] = useState<GeoPoint>(() => getFallbackCoords(indirizzoSafe));
   const [geocodingLoading, setGeocodingLoading] = useState(false);
 
-  useEffect(() => {
-    const fallback = getFallbackCoords(indirizzoSafe);
-    setCoords(fallback);
+  const cercaCoordinate = useCallback(
+    async (queryIndirizzo: string, signal?: AbortSignal): Promise<GeoPoint | null> => {
+      const clean = queryIndirizzo.trim();
+      if (clean.length < 4) return null;
 
-    if (indirizzoSafe.length < 5) return;
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
       setGeocodingLoading(true);
       try {
-        const { streetQuery, cap } = parseStreetAndNumber(indirizzoSafe);
+        const photonQuery = /roma/i.test(clean) ? clean : `${clean}, Roma`;
+        const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
+          photonQuery
+        )}&limit=1&lat=41.9028&lon=12.4964`;
+
+        const resPhoton = await fetch(photonUrl, { signal });
+        if (resPhoton.ok) {
+          const pData = (await resPhoton.json()) as {
+            features?: Array<{
+              geometry?: { coordinates?: [number, number] };
+              properties?: {
+                name?: string;
+                street?: string;
+                housenumber?: string;
+                district?: string;
+                suburb?: string;
+                postcode?: string;
+              };
+            }>;
+          };
+          const feat = pData.features?.[0];
+          const c = feat?.geometry?.coordinates;
+          if (Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+            const props = feat?.properties;
+            const district = props?.district || props?.suburb;
+            const label =
+              [props?.street || props?.name, props?.housenumber, district]
+                .filter(Boolean)
+                .join(' ') || clean;
+            const point: GeoPoint = {
+              lat: c[1],
+              lon: c[0],
+              label,
+              postcode: props?.postcode,
+              district,
+            };
+            setCoords(point);
+            return point;
+          }
+        }
+
+        const { streetQuery, cap } = parseStreetAndNumber(clean);
         const params = new URLSearchParams({
           format: 'json',
+          addressdetails: '1',
           limit: '1',
           street: streetQuery,
           city: 'Roma',
@@ -134,58 +336,60 @@ export function DueDiligence() {
         if (cap) params.set('postalcode', cap);
 
         const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-          signal: controller.signal,
+          signal,
           headers: { Accept: 'application/json' },
         });
-        if (!res.ok) return;
-        let data = (await res.json()) as Array<{
-          lat?: string;
-          lon?: string;
-          display_name?: string;
-        }>;
-
-        if (!Array.isArray(data) || data.length === 0) {
-          const freeQuery = /roma/i.test(indirizzoSafe)
-            ? indirizzoSafe
-            : `${indirizzoSafe}, Roma, Italia`;
-          const resFree = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
-              freeQuery
-            )}`,
-            { signal: controller.signal, headers: { Accept: 'application/json' } }
-          );
-          if (resFree.ok) {
-            data = (await resFree.json()) as Array<{
-              lat?: string;
-              lon?: string;
-              display_name?: string;
-            }>;
-          }
-        }
-
-        if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
-          const lat = parseFloat(data[0].lat);
-          const lon = parseFloat(data[0].lon);
-          if (Number.isFinite(lat) && Number.isFinite(lon)) {
-            const shortLabel =
-              data[0].display_name?.split(',').slice(0, 3).join(',').trim() || indirizzoSafe;
-            setCoords({ lat, lon, label: shortLabel });
+        if (res.ok) {
+          const data = (await res.json()) as Array<{
+            lat?: string;
+            lon?: string;
+            display_name?: string;
+            address?: { postcode?: string; suburb?: string; city_district?: string };
+          }>;
+          if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
+            const lat = parseFloat(data[0].lat);
+            const lon = parseFloat(data[0].lon);
+            if (Number.isFinite(lat) && Number.isFinite(lon)) {
+              const shortLabel =
+                data[0].display_name?.split(',').slice(0, 3).join(',').trim() || clean;
+              const point: GeoPoint = {
+                lat,
+                lon,
+                label: shortLabel,
+                postcode: data[0].address?.postcode,
+                district: data[0].address?.suburb || data[0].address?.city_district,
+              };
+              setCoords(point);
+              return point;
+            }
           }
         }
       } catch {
         // Fallback locale se offline o annullato
       } finally {
-        if (!controller.signal.aborted) {
+        if (!signal?.aborted) {
           setGeocodingLoading(false);
         }
       }
-    }, 450);
+      return null;
+    },
+    []
+  );
+
+  useEffect(() => {
+    setCoords(getFallbackCoords(indirizzoSafe));
+    if (indirizzoSafe.length < 5) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void cercaCoordinate(indirizzoSafe, controller.signal);
+    }, 550);
 
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [indirizzoSafe]);
+  }, [indirizzoSafe, cercaCoordinate]);
 
   const steps = useMemo(
     () => STEP_LABELS.map((_, idx) => Boolean(rawSteps?.[idx] ?? EMPTY_STEPS[idx])),
@@ -201,6 +405,29 @@ export function DueDiligence() {
     value: (typeof commessa)[K]
   ) => {
     aggiornaCommessa(commessa.id, { [key]: value });
+  };
+
+  const handleSuggerisciDaIndirizzo = async () => {
+    const trovato = (await cercaCoordinate(indirizzoSafe)) ?? coords;
+    const analisi = analizzaLocalizzazioneRoma(indirizzoSafe, trovato);
+
+    if (analisi.municipio) {
+      updateField('municipio', analisi.municipio);
+    }
+
+    const parti: string[] = [];
+    parti.push(
+      `Localizzato su ${analisi.zonaRilevata ?? indirizzoSafe} (${trovato.lat.toFixed(5)}, ${trovato.lon.toFixed(5)})`
+    );
+    if (analisi.municipio) {
+      parti.push(`Municipio impostato su ${analisi.municipio}`);
+    }
+    if (analisi.tessutoSuggerito) {
+      parti.push(`Inquadramento PRG indicativo: ${analisi.tessutoSuggerito}`);
+    }
+    parti.push('Conferma sempre Tessuto, vincoli D.Lgs. 42/2004 e subalterni su Formaps.it.');
+
+    setAvvisoSuggerimento(parti.join(' · '));
   };
 
   const rawDettagli =
@@ -259,6 +486,14 @@ export function DueDiligence() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => void handleSuggerisciDaIndirizzo()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 transition-colors"
+          >
+            <Wand2 size={13} />
+            <span>Suggerisci da indirizzo</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setMostraMappa((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:border-zinc-950 transition-colors"
           >
@@ -277,6 +512,19 @@ export function DueDiligence() {
           </a>
         </div>
       </header>
+
+      {avvisoSuggerimento && (
+        <div className="rounded-xl bg-zinc-900 text-zinc-100 border border-zinc-700 px-4 py-2.5 text-xs flex items-center justify-between gap-3">
+          <span>{avvisoSuggerimento}</span>
+          <button
+            type="button"
+            onClick={() => setAvvisoSuggerimento(null)}
+            className="font-mono text-[11px] text-zinc-400 hover:text-white shrink-0"
+          >
+            Chiudi
+          </button>
+        </div>
+      )}
 
       <section className="rounded-xl bg-white border border-zinc-300 p-4 space-y-3">
         <div className="flex items-center gap-2 border-b border-zinc-200 pb-2.5">
@@ -305,14 +553,40 @@ export function DueDiligence() {
             />
           </label>
 
-          <label className="block sm:col-span-2">
-            <span className="block font-semibold text-zinc-700 mb-1">Indirizzo Immobile</span>
-            <input
-              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-zinc-950 focus:outline-none focus:border-zinc-950"
-              value={commessa.indirizzo ?? ''}
-              onChange={(e) => updateField('indirizzo', e.target.value)}
-            />
-          </label>
+          <div className="block sm:col-span-2">
+            <label
+              htmlFor="dd-indirizzo-input"
+              className="block font-semibold text-zinc-700 mb-1"
+            >
+              Indirizzo Immobile
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                id="dd-indirizzo-input"
+                type="text"
+                className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-zinc-950 focus:outline-none focus:border-zinc-950"
+                value={commessa.indirizzo ?? ''}
+                placeholder="Es. Via del Boschetto, 72, 00184 Roma"
+                onChange={(e) => updateField('indirizzo', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleSuggerisciDaIndirizzo();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void handleSuggerisciDaIndirizzo()}
+                disabled={geocodingLoading}
+                className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 shrink-0 transition-colors"
+                title="Centra mappa e suggerisci Municipio/PRG"
+              >
+                <Search size={13} />
+                <span>{geocodingLoading ? '...' : 'Cerca'}</span>
+              </button>
+            </div>
+          </div>
 
           <label className="block">
             <span className="block font-semibold text-zinc-700 mb-1">Titolo Abilitativo</span>

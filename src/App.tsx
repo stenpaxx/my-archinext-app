@@ -86,6 +86,10 @@ export function App() {
             : cloudData.commesse[0].id,
           vani: { ...prev.vani, ...cloudData.vani },
           voci: { ...prev.voci, ...cloudData.voci },
+          steps: {
+            ...prev.steps,
+            ...((cloudData as { steps?: Record<string, boolean[]> }).steps ?? {}),
+          },
         }));
       }
     } catch {
@@ -202,6 +206,10 @@ export function App() {
     }
   };
 
+  const metaLocalizzazione = [commessa?.municipio?.trim(), commessa?.indirizzo?.trim()]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-zinc-100 text-zinc-950 flex flex-col lg:flex-row">
       <Sidebar
@@ -244,8 +252,8 @@ export function App() {
               <span className="font-bold">
                 {commessa ? `${commessa.codice} — ${commessa.titolo}` : 'MY ARCHINEXT'}
               </span>
-              {commessa?.indirizzo && (
-                <span className="hidden md:inline text-zinc-500"> · {commessa.indirizzo}</span>
+              {metaLocalizzazione && (
+                <span className="hidden md:inline text-zinc-500"> · {metaLocalizzazione}</span>
               )}
             </div>
           </div>

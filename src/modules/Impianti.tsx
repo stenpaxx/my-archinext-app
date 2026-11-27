@@ -1,19 +1,28 @@
 import { useMemo, useState } from 'react';
 import { Zap, Flame, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { useStore, useAttiva } from '@/lib/store';
+import { useStore, useAttiva, EMPTY_VANI } from '@/lib/store';
 
 export function Impianti() {
   const { commessa } = useAttiva();
-  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? [] : []));
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? EMPTY_VANI : EMPTY_VANI));
 
   const [livelloCEI, setLivelloCEI] = useState<'1' | '2' | '3'>('1');
   const [pianoInduzione, setPianoInduzione] = useState<boolean>(true);
   const [pompaCalore, setPompaCalore] = useState<boolean>(true);
 
   const calcolo = useMemo(() => {
-    const mqTotali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0) || 72;
-    const nBagni = vani.filter((v) => v.destinazione.toLowerCase().includes('bagno')).length || 1;
-    const nCamere = vani.filter((v) => v.destinazione.toLowerCase().includes('camera')).length || 2;
+    const mqReali = vani.reduce((acc, v) => acc + (Number(v.superficie) || 0), 0);
+    const mqTotali = mqReali > 0 ? mqReali : 72;
+
+    const hMediaReale =
+      vani.length > 0
+        ? vani.reduce((acc, v) => acc + (Number(v.altezzaMedia) || 2.7), 0) / vani.length
+        : 2.7;
+
+    const nBagni =
+      vani.filter((v) => v.destinazione.toLowerCase().includes('bagno')).length || 1;
+    const nCamere =
+      vani.filter((v) => v.destinazione.toLowerCase().includes('camera')).length || 2;
 
     let potenzaKw = mqTotali <= 75 ? 3.0 : mqTotali <= 125 ? 4.5 : 6.0;
     if (pianoInduzione) potenzaKw += 1.5;
@@ -34,11 +43,12 @@ export function Impianti() {
           ? 5
           : 6;
 
-    const potenzaTermicaKw = Number(((mqTotali * 3.0 * 35) / 1000).toFixed(1));
+    const potenzaTermicaKw = Number(((mqTotali * hMediaReale * 35) / 1000).toFixed(1));
     const obbligoProgettoProfessionista = potenzaKw > 6.0 || mqTotali > 400;
 
     return {
       mqTotali,
+      hMediaReale,
       nBagni,
       potenzaKw: Number(potenzaKw.toFixed(1)),
       puntiPreseMin,
@@ -53,6 +63,9 @@ export function Impianti() {
     return <div className="p-10 text-zinc-600">Nessuna commessa attiva.</div>;
   }
 
+  const municipio = commessa.municipio?.trim() || 'Municipio I';
+  const tessuto = commessa.tessutoPRG?.trim() || 'T1';
+
   return (
     <div className="space-y-4">
       <header>
@@ -61,7 +74,8 @@ export function Impianti() {
         </h1>
         <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
           Dotazioni minime impianto elettrico, fabbisogno termico e adempimenti DM 37/2008. Commessa:{' '}
-          <strong className="text-zinc-950">{commessa.codice}</strong>
+          <strong className="text-zinc-950">{commessa.codice}</strong> · {municipio} ·{' '}
+          {tessuto.split('—')[0].trim()}
         </p>
       </header>
 
@@ -70,7 +84,8 @@ export function Impianti() {
           <div>
             <h2 className="text-sm font-bold text-zinc-950">Configurazione Impiantistica</h2>
             <p className="text-xs text-zinc-600">
-              Calibrata su {calcolo.mqTotali.toFixed(1)} mq ({vani.length || 5} vani censiti)
+              Calibrata su {calcolo.mqTotali.toFixed(1)} mq ({vani.length || 5} vani · h media{' '}
+              {calcolo.hMediaReale.toFixed(2)} m)
             </p>
           </div>
 
@@ -103,7 +118,9 @@ export function Impianti() {
             />
           </label>
           <label className="flex items-center justify-between rounded-lg border border-zinc-300 bg-zinc-50 px-3.5 py-2.5 cursor-pointer">
-            <span className="text-xs font-semibold text-zinc-900">Climatizzazione / Pompa di calore</span>
+            <span className="text-xs font-semibold text-zinc-900">
+              Climatizzazione / Pompa di calore
+            </span>
             <input
               type="checkbox"
               checked={pompaCalore}
@@ -159,7 +176,8 @@ export function Impianti() {
           </div>
 
           <p className="text-[11px] text-zinc-300 leading-relaxed">
-            Prevedere almeno 2 interruttori differenziali (30 mA tipo A/F) per garantire continuità di servizio e SPD contro sovratensioni.
+            Prevedere almeno 2 interruttori differenziali (30 mA tipo A/F) per garantire continuità
+            di servizio e SPD contro sovratensioni.
           </p>
         </section>
 
@@ -195,14 +213,16 @@ export function Impianti() {
               <div className="flex items-start gap-2 text-amber-300">
                 <AlertTriangle size={15} className="shrink-0 mt-0.5" />
                 <span>
-                  Potenza &gt; 6 kW: obbligatorio progetto firmato da professionista iscritto all&apos;Albo (DM 37/2008 art. 5).
+                  Potenza &gt; 6 kW: obbligatorio progetto firmato da professionista iscritto
+                  all&apos;Albo (DM 37/2008 art. 5).
                 </span>
               </div>
             ) : (
               <div className="flex items-start gap-2 text-emerald-300">
                 <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
                 <span>
-                  Potenza ≤ 6 kW: progetto a cura del Responsabile Tecnico dell&apos;impresa installatrice e rilascio Di.Co.
+                  Potenza ≤ 6 kW: progetto a cura del Responsabile Tecnico dell&apos;impresa
+                  installatrice e rilascio Di.Co.
                 </span>
               </div>
             )}

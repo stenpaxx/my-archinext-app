@@ -20,12 +20,16 @@ export function Bozze() {
       (acc, v) => acc + (Number(v.superfFinestrata) || 0),
       0
     );
+
+    const prezzoVoce = (v: (typeof voci)[number]) =>
+      Number(v.prezzoUnitario ?? v.prezzo) || 0;
+
     const lavoriNetti = voci
-      .filter((v) => !v.oneriSicurezza)
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+      .filter((v) => !v.oneriSicurezza && !v.sicurezza)
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * prezzoVoce(v), 0);
     const oneriSicurezza = voci
-      .filter((v) => Boolean(v.oneriSicurezza))
-      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * (Number(v.prezzoUnitario) || 0), 0);
+      .filter((v) => Boolean(v.oneriSicurezza || v.sicurezza))
+      .reduce((acc, v) => acc + (Number(v.quantita) || 0) * prezzoVoce(v), 0);
     const totaleLavori = lavoriNetti + oneriSicurezza;
 
     const elencoVani =
@@ -42,7 +46,7 @@ export function Bozze() {
                   : rai >= 0.125
                     ? `RAI ${rai.toFixed(3)} (>= 1/8 conforme)`
                     : v.vmc
-                      ? `RAI ${rai.toFixed(3)} compensato con VMC`
+                      ? `RAI ${rai.toFixed(3)} con VMC integrativa`
                       : `RAI ${rai.toFixed(3)} (< 1/8 da verificare)`;
               return `  * ${v.nome || 'Vano'} [${v.destinazione || 'Destinazione da indicare'}]: Sup. ${sup.toFixed(
                 2
@@ -54,9 +58,9 @@ export function Bozze() {
         : '  * Vani da censire e riscontrare in fase di rilievo esecutivo e restituzione grafica.';
 
     const codiceCommessa = commessa?.codice ?? '2026-014';
-    const titoloCommessa = commessa?.titolo ?? 'Intervento Edilizio in Roma Capitale';
-    const indirizzoCommessa = commessa?.indirizzo ?? 'Via del Boschetto, 72, 00184 Roma RM';
-    const municipioCommessa = commessa?.municipio ?? 'Municipio I';
+    const titoloCommessa = commessa?.titolo?.trim() || 'Intervento Edilizio in Roma Capitale';
+    const indirizzoCommessa = commessa?.indirizzo?.trim() || 'Via del Boschetto, 72, 00184 Roma RM';
+    const municipioCommessa = commessa?.municipio?.trim() || 'Municipio I';
     const foglio = commessa?.foglio || '—';
     const particella = commessa?.particella || '—';
     const subalterno = commessa?.subalterno || '—';
@@ -111,56 +115,56 @@ export function Bozze() {
 
     const sezioneProcedimentoSpecifica = isFrazionamento
       ? `QUADRO PROCEDIMENTALE SPECIFICO — FRAZIONAMENTO (${tipologiaTitolo.toUpperCase()})
-  * Unità immobiliari risultanti (U.I.U.): ${
+- Unità immobiliari risultanti (U.I.U.): ${
     proc.unitaRisultanti?.trim() ||
     'Suddivisione in unità immobiliari distinte come da elaborati di progetto e planimetrie'
   }
-  * Requisiti igienico-sanitari / RAI / VMC / impianti per unità: ${
+- Requisiti igienico-sanitari / RAI / VMC / impianti per unità: ${
     proc.requisitiUnitaFrazionate?.trim() ||
-    'Verifica RAI >= 1/8 o VMC, superfici/altezze minime D.M. 05/07/1975 e autonomia impiantistica D.M. 37/08 per ciascuna unità'
+    'Verifica RAI >= 1/8, ventilazione/VMC, superfici/altezze minime D.M. 05/07/1975 e autonomia impiantistica D.M. 37/08 per ciascuna unità'
   }
-  * Contributo di costruzione / monetizzazione: ${
+- Contributo di costruzione / monetizzazione: ${
     proc.oneriFrazionamento?.trim() ||
     'Da verificare ai sensi del D.P.R. 380/2001, del R.E.C. e della normativa regionale del Lazio'
   }
-  * Impresa esecutrice: ${impresa}`
+- Impresa esecutrice: ${impresa}`
       : isEdificazione
         ? `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
-  * Parametri urbanistici di progetto (SUL / Volume / Indice): ${
+- Parametri urbanistici di progetto (SUL / Volume / Indice): ${
     proc.sulVolumeProgetto?.trim() || 'Come da elaborati plano-volumetrici e verifiche N.T.A.'
   }
-  * Contributo di costruzione (oneri urbanizzazione / costo costruzione): ${
+- Contributo di costruzione (oneri urbanizzazione / costo costruzione): ${
     proc.contributoCostruzione?.trim() || 'Da computare / versare secondo tariffe Roma Capitale'
   }
-  * Invarianza idraulica e permeabilità dei suoli (DAC 90/2026 & R.E.C.): ${
+- Invarianza idraulica e permeabilità dei suoli (DAC 90/2026 & R.E.C.): ${
     proc.invarianzaIdraulica?.trim() ||
     'Verifica superfici drenanti/permeabili e laminazione meteorica'
   }
-  * Impresa esecutrice: ${impresa}`
+- Impresa esecutrice: ${impresa}`
         : isScia
           ? `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
-  * Profilo strutturale / sismico: ${
+- Profilo strutturale / sismico: ${
     proc.opereStrutturali?.trim() ||
     'Verifiche e depositi strutturali ex D.P.R. 380/2001 e L.R. Lazio ove dovuti'
   }
-  * Sagoma, prospetti e destinazioni d'uso: ${
+- Sagoma, prospetti e destinazioni d'uso: ${
     proc.variazioneSagomaProspetti?.trim() ||
     'Coerenza con N.T.A. del P.R.G. e pareri/nulla osta acquisiti'
   }
-  * Impresa esecutrice: ${impresa}`
+- Impresa esecutrice: ${impresa}`
           : `QUADRO PROCEDIMENTALE SPECIFICO — ${tipologiaTitolo.toUpperCase()}
-  * Esclusione opere strutturali / prospetti: ${
+- Esclusione opere strutturali / prospetti: ${
     proc.opereStrutturali?.trim() ||
     'Nessuna opera su parti strutturali portanti o prospetti esterni'
   }
-  * Impresa esecutrice: ${impresa}`;
+- Impresa esecutrice: ${impresa}`;
 
     const sezioneCartaQualita = haCartaQualita
       ? `\nCARTA PER LA QUALITÀ — P.R.G. ROMA CAPITALE
-  * Ambito / elemento: ${
+- Ambito / elemento: ${
     proc.ambitoCartaQualita?.trim() || 'Ambito soggetto a Carta per la Qualità del P.R.G.'
   }
-  * Prescrizioni e verifiche ambientali/tipologiche: ${
+- Prescrizioni e verifiche ambientali/tipologiche: ${
     proc.prescrizioniCartaQualita?.trim() ||
     'Coerenza con materiali, caratteri tipologici, permeabilità dei suoli e invarianza idraulica (DAC 90/2026 & R.E.C.)'
   }\n`
@@ -168,13 +172,13 @@ export function Bozze() {
 
     const sezioneTutelaSoprintendenza = haVincolo
       ? `\nVINCOLO SOPRINTENDENZA — D.LGS. 42/2004
-  * Tipologia di tutela: ${
+- Tipologia di tutela: ${
     proc.tipoTutelaBeniCulturali?.trim() || 'Tutela beni culturali / paesaggistici ex D.Lgs. 42/2004'
   }
-  * Estremi atto / parere / istanza: ${
+- Estremi atto / parere / istanza: ${
     proc.attoSoprintendenza?.trim() || 'Da richiamare con estremi di protocollo/autorizzazione'
   }
-  * Prescrizioni e condizioni operative: ${
+- Prescrizioni e condizioni operative: ${
     proc.prescrizioniTutela?.trim() ||
     'Rispetto integrale delle prescrizioni impartite dalla Soprintendenza in fase esecutiva'
   }\n`
@@ -209,8 +213,8 @@ ${sezioneCartaQualita}${sezioneTutelaSoprintendenza}
 2. DESCRIZIONE DETTAGLIATA DELLE OPERE PROGETTATE
 --------------------------------------------------------------------------------
 L'intervento consiste nelle opere riconducibili al procedimento "${tipologiaTitolo}" così come rappresentate negli elaborati progettuali:
-  * Realizzazione delle lavorazioni edilizie interne e/o esterne coerenti con il titolo abilitativo indicato e con le prescrizioni del P.R.G. e del R.E.C.
-  * Adeguamento, integrazione o rifacimento degli impianti tecnologici (elettrico/dati, idrico-sanitario, scarichi, climatizzazione e ventilazione), eseguiti a regola d'arte da imprese abilitate ai sensi del D.M. 22 gennaio 2008, n. 37, con rilascio delle relative Dichiarazioni di Conformità (Di.Co.) a fine lavori.
+- Realizzazione delle lavorazioni edilizie interne e/o esterne coerenti con il titolo abilitativo indicato e con le prescrizioni del P.R.G. e del R.E.C.
+- Adeguamento, integrazione o rifacimento degli impianti tecnologici (elettrico/dati, idrico-sanitario, scarichi, climatizzazione e ventilazione), eseguiti a regola d'arte da imprese abilitate ai sensi del D.M. 22 gennaio 2008, n. 37, con rilascio delle relative Dichiarazioni di Conformità (Di.Co.) a fine lavori.
 ${
   isCilaOrLibera
     ? '  * Lavori eseguiti senza alterazione di parti strutturali portanti né modifica delle superfici/volumi urbanistici.'
@@ -231,15 +235,15 @@ ${elencoVani}
 4. QUADRO ECONOMICO DI RIFERIMENTO, SICUREZZA E GESTIONE RIFIUTI
 --------------------------------------------------------------------------------
 Sulla base del computo metrico estimativo redatto con riferimento al Prezzario Regionale del Lazio vigente, l'importo stimato delle opere risulta così articolato:
-  * Importo lavori a misura / a corpo (IVA esclusa): € ${lavoriNetti.toLocaleString('it-IT', {
+- Importo lavori a misura / a corpo (IVA esclusa): € ${lavoriNetti.toLocaleString('it-IT', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}
-  * Oneri della sicurezza (IVA esclusa): € ${oneriSicurezza.toLocaleString('it-IT', {
+- Oneri della sicurezza (IVA esclusa): € ${oneriSicurezza.toLocaleString('it-IT', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}
-  * Totale complessivo stimato delle opere (IVA esclusa): € ${totaleLavori.toLocaleString('it-IT', {
+- Totale complessivo stimato delle opere (IVA esclusa): € ${totaleLavori.toLocaleString('it-IT', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}
@@ -289,7 +293,7 @@ ${tecnicoNome.trim() || 'Tecnico abilitato'}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
-            6. Relazione Asseverata SUET Roma
+6. Relazione Asseverata SUET Roma
           </h1>
           <p className="text-xs sm:text-sm text-zinc-700 mt-0.5">
             Bozza tecnica asseverata strutturata secondo la prassi SUET Roma Capitale e i campi

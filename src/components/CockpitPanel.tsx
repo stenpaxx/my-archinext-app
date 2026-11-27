@@ -13,6 +13,7 @@ import {
 import { useStore, EMPTY_VANI, EMPTY_VOCI } from '@/lib/store';
 import { calcolaRiepilogoEconomico } from '@/lib/economia';
 import type { SectionId } from '@/components/Sidebar';
+import type { DettagliProcedimento } from '@/modules/DueDiligence';
 
 const EMPTY_STEPS: boolean[] = [false, false, false, false, false, false];
 
@@ -65,13 +66,17 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
       maximumFractionDigits: 0,
     }).format(val);
 
-  const titolo = commessa?.titolo ?? 'Commessa Attiva';
+  const titolo = commessa?.titolo?.trim() || 'Commessa Attiva';
   const tipologia = commessa?.tipologia ?? 'Manutenzione Straordinaria CILA';
   const tessuto = commessa?.tessutoPRG ?? 'T1';
+  const municipio = commessa?.municipio?.trim() || 'Roma Capitale';
   const haVincolo = Boolean(commessa?.vincoloSoprintendenza);
   const haCartaQualita = Boolean(commessa?.cartaQualita);
-  const indirizzo = commessa?.indirizzo ?? 'Via del Boschetto, 72, 00184 Roma RM';
+  const indirizzo = commessa?.indirizzo?.trim() || 'Via del Boschetto, 72, 00184 Roma RM';
   const formapsUrl = `https://www.formaps.it/?q=${encodeURIComponent(indirizzo)}`;
+
+  const dettagli = ((commessa as unknown as { dettagliProcedimento?: DettagliProcedimento })
+    ?.dettagliProcedimento ?? {}) as DettagliProcedimento;
 
   const agentNotes = useMemo(() => {
     const combinato = `${tipologia} ${titolo}`.toLowerCase();
@@ -85,57 +90,93 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
       (tipologia.includes('Permesso di Costruire') ||
         tipologia.includes('Nuova Edificazione'));
 
+    const hasTitoloLegittimante = Boolean(dettagli.titoloLegittimante?.trim());
+    const hasDocfa = Boolean(dettagli.aggiornamentoCatastale?.trim());
+    const hasImpresa = Boolean(dettagli.impresaEsecutrice?.trim());
+    const hasAttoSoprintendenza = Boolean(dettagli.attoSoprintendenza?.trim());
+    const hasAmbitoCq = Boolean(dettagli.ambitoCartaQualita?.trim());
+
     if (agentMode === 'urbanistica') {
       const notaTitolo = isFrazionamento
-        ? `Procedimento ${tipologia}: verifica ammissibilità del frazionamento nel tessuto ${tessuto}, autonomia funzionale/impiantistica delle unità risultanti e requisiti igienico-sanitari/monetizzazione.`
+        ? `Procedimento ${tipologia} (${municipio}): verifica ammissibilità del frazionamento nel tessuto ${tessuto}${dettagli.unitaRisultanti?.trim() ? ` (${dettagli.unitaRisultanti.trim()})` : ''}, autonomia impiantistica e monetizzazione standard.`
         : isEdificazione
-          ? `Procedimento ${tipologia}: riscontra indici urbanistici, SUL/volumi, distacchi e contributo di costruzione nel tessuto ${tessuto} (${commessa?.municipio ?? 'Roma Capitale'}).`
+          ? `Procedimento ${tipologia} (${municipio}): riscontra indici urbanistici${dettagli.sulVolumeProgetto?.trim() ? ` [${dettagli.sulVolumeProgetto.trim()}]` : ''}, distacchi e contributo di costruzione nel tessuto ${tessuto}.`
           : isScia
-            ? `Procedimento ${tipologia}: verifica coerenza con le NTA del tessuto ${tessuto}, eventuale incidenza su sagoma/prospetti/destinazioni d'uso e profili strutturali.`
-            : `Procedimento ${tipologia}: verifica che le opere interne restino nel perimetro consentito nel tessuto ${tessuto} senza alterare parti strutturali o prospetti.`;
+            ? `Procedimento ${tipologia} (${municipio}): verifica coerenza con le NTA del tessuto ${tessuto}, sagoma/prospetti e profili strutturali.`
+            : `Procedimento ${tipologia} (${municipio}): verifica che le opere interne restino nel perimetro consentito nel tessuto ${tessuto} senza alterare parti strutturali o prospetti.`;
 
-      return [
-        notaTitolo,
-        `Controlla stato legittimo (art. 9-bis D.P.R. 380/2001), allineamento catastale (Fg./Part./Sub.) e aggiornamento DOCFA a fine lavori (L. 122/2010).`,
-        haVincolo
-          ? 'Vincolo D.Lgs 42/2004 attivo: verifica autorizzazione/parere Soprintendenza e prescrizioni di tutela collegate al titolo.'
-          : 'Verifica eventuali ambiti di pianificazione esecutiva, vincoli sovraordinati o prescrizioni del municipio.',
-      ];
+      const notaLegittimita =
+        hasTitoloLegittimante && hasDocfa
+          ? `Stato legittimo censito (${dettagli.titoloLegittimante!.trim()}) e aggiornamento catastale definito (${dettagli.aggiornamentoCatastale!.trim()}).`
+          : `Completa in Due Diligence ${!hasTitoloLegittimante ? 'il precedente edilizio legittimante (art. 9-bis D.P.R. 380/2001)' : ''}${!hasTitoloLegittimante && !hasDocfa ? ' e ' : ''}${!hasDocfa ? "l'aggiornamento DOCFA a fine lavori (L. 122/2010)" : ''}.`;
+
+      const notaVincoli = haVincolo
+        ? hasAttoSoprintendenza
+          ? `Vincolo D.Lgs 42/2004 attivo: riferimento Soprintendenza registrato (${dettagli.attoSoprintendenza!.trim()}). Verifica prescrizioni operative.`
+          : 'Vincolo D.Lgs 42/2004 attivo: inserisci in Due Diligence tipologia di tutela ed estremi autorizzazione/parere Soprintendenza.'
+        : `Nessun vincolo D.Lgs 42/2004 flaggato: verifica su Formaps.it eventuali fasce di rispetto o prescrizioni del ${municipio}.`;
+
+      return [notaTitolo, notaLegittimita, notaVincoli];
     }
 
     if (agentMode === 'ambiente') {
       const notaAmbienteTitolo =
         isEdificazione || isFrazionamento
-          ? `Ambiente & ${tipologia}: cura invarianza idraulica, permeabilità dei suoli (DAC 90/2026 & REC Roma), dotazioni impiantistiche/energetiche e gestione rifiuti (D.Lgs. 152/2006).`
-          : `Ambiente & ${tipologia}: verifica RAI (>= 1/8) o VMC per locali/bagni ciechi, requisiti termo-igrometrici e conferimento rifiuti di cantiere con FIR (D.Lgs. 152/2006).`;
+          ? `Ambiente & ${tipologia} (${municipio}): cura invarianza idraulica, permeabilità dei suoli (DAC 90/2026 & REC Roma), dotazioni impiantistiche e gestione rifiuti (D.Lgs. 152/2006).`
+          : `Ambiente & ${tipologia} (${municipio}): verifica RAI (>= 1/8) o VMC per locali/bagni ciechi, requisiti termo-igrometrici e conferimento rifiuti di cantiere con FIR (D.Lgs. 152/2006).`;
+
+      const notaCq = haCartaQualita
+        ? hasAmbitoCq
+          ? `Carta per la Qualità attiva (${dettagli.ambitoCartaQualita!.trim()}): verifica coerenza di materiali, infissi e permeabilità con le prescrizioni PRG.`
+          : 'Carta per la Qualità attiva: specifica in Due Diligence ambito e prescrizioni su materiali, infissi e permeabilità.'
+        : `Sicurezza cantiere (D.Lgs. 81/2008): ${hasImpresa ? `impresa ${dettagli.impresaEsecutrice!.trim()} censita — verifica POS/DURC e nomina CSP/CSE.` : 'inserisci impresa esecutrice e posizione CSP/CSE in Due Diligence.'}`;
 
       return [
         notaAmbienteTitolo,
-        haCartaQualita
-          ? 'Carta per la Qualità attiva: riscontra coerenza di materiali, infissi, verde/spazi aperti e permeabilità con le prescrizioni del PRG.'
-          : 'Verifica in Due Diligence vincoli ambientali, tutela acustica e sicurezza di cantiere (D.Lgs. 81/2008).',
+        notaCq,
         isCilaOrLibera
-          ? 'In regime CILA/Edilizia Libera cura soprattutto ventilazione/VMC, impianti D.M. 37/08 e tracciabilità rifiuti inerti.'
+          ? 'In regime CILA/Edilizia Libera cura ventilazione/VMC, conformità impianti D.M. 37/08 e tracciabilità rifiuti inerti.'
           : 'Allinea verifiche ambientali, abachi vani e voci del Prezzario Regionale del Lazio nella relazione SUET.',
       ];
     }
 
     const notaGeneraleTitolo = isFrazionamento
-      ? `Titolo ${tipologia} su "${titolo}": allinea unità risultanti, verifiche RAI/VMC per singola U.I.U., catasto e bozza SUET.`
+      ? `${tipologia} · ${municipio} ("${titolo}"): allinea unità risultanti, verifiche RAI/VMC per singola U.I.U., catasto e bozza SUET.`
       : isEdificazione
-        ? `Titolo ${tipologia} su "${titolo}": coordina parametri urbanistici, contributo di costruzione, invarianza idraulica e quadro economico.`
+        ? `${tipologia} · ${municipio} ("${titolo}"): coordina parametri urbanistici, contributo di costruzione, invarianza idraulica e quadro economico.`
         : isScia
-          ? `Titolo ${tipologia} su "${titolo}": riscontra elaborati grafici, profili strutturali/prospettici, stato legittimo e tessuto ${tessuto}.`
-          : `Titolo ${tipologia} su "${titolo}": riscontra visura/planimetria catastale, assenza parti strutturali e tessuto ${tessuto}.`;
+          ? `${tipologia} · ${municipio} ("${titolo}"): riscontra elaborati grafici, profili strutturali/prospettici, stato legittimo e tessuto ${tessuto}.`
+          : `${tipologia} · ${municipio} ("${titolo}"): riscontra visura/planimetria catastale, assenza parti strutturali e tessuto ${tessuto}.`;
+
+    const azioniMancanti: string[] = [];
+    if (!stats.haDatiCatastali) azioniMancanti.push('Fg./Part./Sub.');
+    if (!hasTitoloLegittimante) azioniMancanti.push('titolo legittimante');
+    if (!hasImpresa) azioniMancanti.push('impresa esecutrice');
+    if (haVincolo && !hasAttoSoprintendenza) azioniMancanti.push('estremi Soprintendenza');
+
+    const notaAzioni =
+      azioniMancanti.length > 0
+        ? `Da completare in Due Diligence: ${azioniMancanti.join(', ')}.`
+        : haVincolo
+          ? `Due Diligence allineata con vincolo D.Lgs 42/2004 (${dettagli.attoSoprintendenza!.trim()}): verifica coerenza prescrizioni prima dell'avvio lavori.`
+          : 'Anagrafica Due Diligence, stato legittimo e impresa esecutrice allineati per la relazione SUET.';
 
     return [
       notaGeneraleTitolo,
-      haVincolo
-        ? `Con vincolo D.Lgs 42/2004 e ${tipologia}, verifica sempre atti/pareri della Soprintendenza prima dell'avvio lavori.`
-        : `Controlla coerenza tra stato legittimo, ${tipologia} e NTA del PRG.`,
+      notaAzioni,
       'Allinea dati di Due Diligence, abachi vani, verifiche RAI e voci del Prezzario Regionale del Lazio prima del deposito.',
     ];
-  }, [agentMode, tipologia, titolo, tessuto, commessa?.municipio, haVincolo, haCartaQualita]);
+  }, [
+    agentMode,
+    tipologia,
+    titolo,
+    tessuto,
+    municipio,
+    haVincolo,
+    haCartaQualita,
+    dettagli,
+    stats.haDatiCatastali,
+  ]);
 
   const badgeEconomico =
     stats.eco.modalita === 'computo'
@@ -214,7 +255,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
                 Assistente Tecnico
               </h2>
               <p className="text-[11px] font-mono text-zinc-400">
-                {tipologia} · PRG Roma · REC · DAC 90/2026
+                {tipologia} · {municipio} · PRG Roma
               </p>
             </div>
           </div>
@@ -296,7 +337,7 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
           <div className="rounded-lg bg-zinc-800 border border-zinc-700/90 px-3 py-2 flex items-center justify-between gap-2">
             <span className="text-zinc-300">Catasto &amp; PRG</span>
             <span className="font-mono text-white text-right">
-              {tessuto} · {stats.haDatiCatastali ? 'Dati censiti' : 'Da completare'}
+              {tessuto.split('—')[0].trim()} · {stats.haDatiCatastali ? 'Dati censiti' : 'Da completare'}
             </span>
           </div>
 
@@ -343,7 +384,9 @@ export function CockpitPanel({ activeSection, onSelectSection }: CockpitPanelPro
           </div>
 
           <div className="pt-1 flex items-center justify-between text-[11px] font-mono text-zinc-400">
-            <span className="truncate">{indirizzo}</span>
+            <span className="truncate">
+              {municipio} · {indirizzo}
+            </span>
             <a
               href={formapsUrl}
               target="_blank"

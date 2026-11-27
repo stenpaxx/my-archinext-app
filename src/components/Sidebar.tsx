@@ -39,7 +39,7 @@ export interface SidebarProps {
 
 interface NavItemConfig {
   id: SectionId;
-  stepNumber?: number;
+  stepNumber: number;
   label: string;
   icon: typeof Building2;
 }
@@ -48,7 +48,6 @@ const WORKFLOW_ITEMS: NavItemConfig[] = [
   { id: 'due-diligence', stepNumber: 1, label: 'Due Diligence & PRG', icon: Building2 },
   { id: 'audit-rai', stepNumber: 2, label: 'Audit & RAI', icon: SunMedium },
   { id: 'abachi', stepNumber: 3, label: 'Abachi Vani & Infissi', icon: LayoutGrid },
-  { id: 'impianti', label: 'Impianti CEI 64-8 / DM 37', icon: Zap },
   { id: 'computo', stepNumber: 4, label: 'Computo Metrico', icon: Calculator },
   { id: 'cronoprogramma', stepNumber: 5, label: 'Cronoprogramma', icon: CalendarRange },
   { id: 'bozze', stepNumber: 6, label: 'Relazione SUET', icon: FileCheck2 },
@@ -58,10 +57,10 @@ const STEP_INDICES_BY_ITEM: Record<SectionId, number | null> = {
   'due-diligence': 0,
   'audit-rai': 1,
   abachi: 2,
-  impianti: null,
   computo: 3,
   cronoprogramma: 4,
   bozze: 5,
+  impianti: null,
   documenti: null,
   autolisp: null,
 };
@@ -254,7 +253,7 @@ export function Sidebar({
 
         <nav aria-label="Fasi di commessa" className="space-y-1 pt-1">
           <div className="px-1 pb-1 text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-400">
-            Workflow Commessa
+            Workflow Commessa (6 Step)
           </div>
 
           {WORKFLOW_ITEMS.map((item) => {
@@ -284,7 +283,7 @@ export function Sidebar({
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
                     }`}
                   >
-                    {item.stepNumber ?? '•'}
+                    {item.stepNumber}
                   </span>
                   <Icon
                     size={14}
@@ -313,6 +312,25 @@ export function Sidebar({
             <div className="px-1 pb-1 text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-400">
               ARCHIVIO / ALLEGATI / TOOLS
             </div>
+
+            <button
+              type="button"
+              onClick={() => handleSelect('impianti')}
+              className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors border ${
+                activeSection === 'impianti'
+                  ? 'bg-white text-zinc-950 border-white font-semibold shadow-xs'
+                  : 'bg-zinc-900/60 text-zinc-200 border-zinc-800 hover:bg-zinc-900 hover:text-white'
+              }`}
+            >
+              <Zap
+                size={15}
+                className={
+                  activeSection === 'impianti' ? 'text-zinc-950 shrink-0' : 'text-amber-300 shrink-0'
+                }
+              />
+              <span className="text-xs truncate">Impianti CEI 64-8 / DM 37</span>
+            </button>
+
             <button
               type="button"
               onClick={() => handleSelect('documenti')}

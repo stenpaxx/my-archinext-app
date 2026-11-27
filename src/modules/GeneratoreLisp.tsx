@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Copy, Check, Download, SlidersHorizontal, Terminal } from 'lucide-react';
-import { useStore, useAttiva } from '@/lib/store';
+import { useStore, useAttiva, EMPTY_VANI } from '@/lib/store';
 
 export function GeneratoreLisp() {
   const { commessa } = useAttiva();
-  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? [] : []));
+  const vani = useStore((s) => (commessa ? s.vani?.[commessa.id] ?? EMPTY_VANI : EMPTY_VANI));
 
   const [layerEsistente, setLayerEsistente] = useState('01_ESISTENTE_MURI');
   const [layerGialli, setLayerGialli] = useState('02_DEMOLIZIONI_GIALLO');
